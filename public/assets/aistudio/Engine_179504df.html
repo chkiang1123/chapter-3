@@ -1,0 +1,466 @@
+<script>
+/* Balance Quest maths engine: parsing, rendering and answer checking for linear equations.
+   Shared by the student game and the teacher dashboard. */
+var Engine = (function () {
+  "use strict";
+
+  // ── Exact rational numbers ───────────────────────────────────────────
+  function gcd(a, b) { a = Math.abs(a); b = Math.abs(b); while (b) { var t = a % b; a = b; b = t; } return a || 1; }
+  function R(n, d) {
+    if (d === undefined) d = 1;
+    if (d === 0) throw new Error("divide by zero");
+    if (d < 0) { n = -n; d = -d; }
+    var g = gcd(n, d);
+    return { n: n / g, d: d / g };
+  }
+  function radd(a, b) { return R(a.n * b.d + b.n * a.d, a.d * b.d); }
+  function rsub(a, b) { return R(a.n * b.d - b.n * a.d, a.d * b.d); }
+  function rmul(a, b) { return R(a.n * b.n, a.d * b.d); }
+  function rdiv(a, b) { if (b.n === 0) throw new Error("divide by zero"); return R(a.n * b.d, a.d * b.n); }
+  function rneg(a) { return R(-a.n, a.d); }
+  function req(a, b) { return a.n === b.n && a.d === b.d; }
+  function rzero(a) { return a.n === 0; }
+  function parseDecimal(text) {
+    var parts = text.split(".");
+    var whole = parts[0] || "0";
+    var frac = parts[1] || "";
+    var d = Math.pow(10, frac.length);
+    return R(parseInt(whole + frac || "0", 10), d);
+  }
+  function rText(a) {
+    var sign = a.n < 0 ? "−" : "";
+    return sign + Math.abs(a.n) + (a.d === 1 ? "" : "/" + a.d);
+  }
+
+  // ── Tokenizer ────────────────────────────────────────────────────────
+  function tokenize(input) {
+    var s = String(input)
+      .replace(/[−–—‒﹣－]/g, "-").replace(/[＋]/g, "+").replace(/[×✕·∙＊]/g, "*").replace(/[÷／]/g, "/")
+      .replace(/[＝]/g, "=").replace(/[（]/g, "(").replace(/[）]/g, ")").replace(/[［]/g, "[").replace(/[］]/g, "]")
+      .replace(/[０-９]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); });
+    var tokens = [];
+    var i = 0;
+    var ws = false;
+    while (i < s.length) {
+      var c = s[i];
+      if (/\s/.test(c)) { ws = true; i++; continue; }
+      var m;
+      if ((m = /^(\d+\.?\d*|\.\d+)/.exec(s.slice(i)))) {
+        tokens.push({ t: "num", raw: m[1], v: parseDecimal(m[1]), ws: ws });
+        i += m[1].length;
+      } else if (/[a-zA-Z]/.test(c)) {
+        tokens.push({ t: "var", v: c.toLowerCase(), ws: ws });
+        i++;
+      } else if ("+-*/".indexOf(c) >= 0) {
+        tokens.push({ t: "op", v: c, ws: ws }); i++;
+      } else if (c === "(" || c === "[" || c === "{") {
+        tokens.push({ t: "lp", v: c === "{" ? "[" : c, ws: ws }); i++;
+      } else if (c === ")" || c === "]" || c === "}") {
+        tokens.push({ t: "rp", v: c === "}" ? "]" : c, ws: ws }); i++;
+      } else if (c === "=") {
+        tokens.push({ t: "eq", ws: ws }); i++;
+      } else {
+        throw new Error("Unexpected character “" + c + "”");
+      }
+      ws = false;
+    }
+    return tokens;
+  }
+
+  // ── Parser ───────────────────────────────────────────────────────────
+  // AST nodes: num, var, neg, add, sub, mul, div, grp, mixed
+  function parseSide(tokens) {
+    var pos = 0;
+    function peek(k) { return tokens[pos + (k || 0)]; }
+    function isOp(t, v) { return t && t.t === "op" && t.v === v; }
+    function fail(msg) { throw new Error(msg || "Cannot read this expression"); }
+
+    function expr() {
+      var node = signed();
+      while (isOp(peek(), "+") || isOp(peek(), "-")) {
+        var op = tokens[pos++].v;
+        var right = signed();
+        node = { k: op === "+" ? "add" : "sub", a: node, b: right };
+      }
+      return node;
+    }
+    function signed() {
+      if (isOp(peek(), "-")) { pos++; return { k: "neg", a: signed() }; }
+      if (isOp(peek(), "+")) { pos++; return signed(); }
+      return product();
+    }
+    function factorAfterOperator() {
+      if (isOp(peek(), "-")) { pos++; return { k: "neg", a: factorAfterOperator() }; }
+      return primary();
+    }
+    function product() {
+      var node = primary();
+      // Mixed number such as "6 2/3"
+      if (node.k === "num" && peek() && peek().t === "num" && peek().ws && isOp(peek(1), "/") && peek(2) && peek(2).t === "num") {
+        var top = tokens[pos].v;
+        var bottom = tokens[pos + 2].v;
+        pos += 3;
+        node = { k: "mixed", w: node, n: { k: "num", v: top, raw: tokens[pos - 3].raw }, d: { k: "num", v: bottom, raw: tokens[pos - 1].raw } };
+      }
+      for (;;) {
+        var t = peek();
+        if (isOp(t, "*")) { pos++; node = { k: "mul", a: node, b: factorAfterOperator(), implicit: false }; }
+        else if (isOp(t, "/")) { pos++; node = { k: "div", a: node, b: factorAfterOperator() }; }
+        else if (t && (t.t === "var" || t.t === "lp")) { node = { k: "mul", a: node, b: primary(), implicit: true }; }
+        else break;
+      }
+      return node;
+    }
+    function primary() {
+      var t = peek();
+      if (!t) fail("The line ends too early");
+      if (t.t === "num") { pos++; return { k: "num", v: t.v, raw: t.raw }; }
+      if (t.t === "var") { pos++; return { k: "var", n: t.v }; }
+      if (t.t === "lp") {
+        pos++;
+        var inner = expr();
+        var close = peek();
+        if (!close || close.t !== "rp") fail("A bracket is not closed");
+        pos++;
+        return { k: "grp", a: inner, br: t.v };
+      }
+      fail("Something is missing near “" + (t.v || "=") + "”");
+    }
+    if (!tokens.length) fail("One side of the equation is empty");
+    var tree = expr();
+    if (pos !== tokens.length) fail(tokens[pos].t === "rp" ? "There is an extra closing bracket" : "Cannot read this expression");
+    return tree;
+  }
+
+  function parseEquation(text) {
+    var tokens = tokenize(text);
+    var eqAt = [];
+    tokens.forEach(function (t, i) { if (t.t === "eq") eqAt.push(i); });
+    if (eqAt.length !== 1) throw new Error(eqAt.length ? "Use only one “=” sign" : "Write a full equation with an “=” sign");
+    return { left: parseSide(tokens.slice(0, eqAt[0])), right: parseSide(tokens.slice(eqAt[0] + 1)) };
+  }
+
+  // ── Linear form a·v + b ──────────────────────────────────────────────
+  function linear(node, v) {
+    switch (node.k) {
+      case "num": return { a: R(0), b: node.v };
+      case "mixed": return { a: R(0), b: radd(node.w.v, rdiv(node.n.v, node.d.v)) };
+      case "var":
+        if (node.n !== v) throw new Error("Use the letter " + v + " in this question");
+        return { a: R(1), b: R(0) };
+      case "neg": { var x = linear(node.a, v); return { a: rneg(x.a), b: rneg(x.b) }; }
+      case "grp": return linear(node.a, v);
+      case "add": { var p = linear(node.a, v), q = linear(node.b, v); return { a: radd(p.a, q.a), b: radd(p.b, q.b) }; }
+      case "sub": { var p2 = linear(node.a, v), q2 = linear(node.b, v); return { a: rsub(p2.a, q2.a), b: rsub(p2.b, q2.b) }; }
+      case "mul": {
+        var m1 = linear(node.a, v), m2 = linear(node.b, v);
+        if (!rzero(m1.a) && !rzero(m2.a)) throw new Error("This is not a linear equation");
+        if (rzero(m1.a)) return { a: rmul(m1.b, m2.a), b: rmul(m1.b, m2.b) };
+        return { a: rmul(m2.b, m1.a), b: rmul(m2.b, m1.b) };
+      }
+      case "div": {
+        var d1 = linear(node.a, v), d2 = linear(node.b, v);
+        if (!rzero(d2.a)) throw new Error("Do not divide by the unknown");
+        if (rzero(d2.b)) throw new Error("Cannot divide by zero");
+        return { a: rdiv(d1.a, d2.b), b: rdiv(d1.b, d2.b) };
+      }
+    }
+    throw new Error("Cannot read this expression");
+  }
+
+  function equationForm(eq, v) {
+    var L = linear(eq.left, v), Rt = linear(eq.right, v);
+    return { a: rsub(L.a, Rt.a), b: rsub(L.b, Rt.b) }; // a·v + b = 0
+  }
+
+  function solve(text, v) {
+    var f = equationForm(parseEquation(text), v);
+    if (rzero(f.a)) return null;
+    return rdiv(rneg(f.b), f.a);
+  }
+
+  // ── Complexity: how "unsimplified" a line is ─────────────────────────
+  function isPlainNumber(node) { return node.k === "num"; }
+  function isRationalLiteral(node) { return node.k === "div" && isPlainNumber(node.a) && isPlainNumber(node.b); }
+  function isNumericAtom(node) {
+    if (node.k === "neg") return isNumericAtom(node.a);
+    return node.k === "num" || node.k === "mixed" || isRationalLiteral(node);
+  }
+  function complexity(node) {
+    switch (node.k) {
+      case "num": return 1;
+      case "mixed": return 2;
+      case "var": return 1;
+      case "neg": return complexity(node.a);
+      case "grp": return complexity(node.a) + (isNumericAtom(node.a) ? 0 : 1);
+      case "add": case "sub": return complexity(node.a) + complexity(node.b);
+      case "mul":
+        if (node.implicit && node.a.k === "num" && req(node.a.v, R(1))) return complexity(node.b); // 1x counts like x
+        return complexity(node.a) + complexity(node.b);
+      case "div":
+        if (isRationalLiteral(node)) return 2;
+        return complexity(node.a) + complexity(node.b) + 1;
+    }
+    return 0;
+  }
+
+  // ── Structure (to spot a line that was just copied) ──────────────────
+  function canon(node) {
+    switch (node.k) {
+      case "num": return rText(node.v);
+      case "mixed": return rText(radd(node.w.v, rdiv(node.n.v, node.d.v)));
+      case "var": return node.n;
+      case "neg": return "-" + canon(node.a);
+      case "grp": return "(" + canon(node.a) + ")";
+      case "add": return canon(node.a) + "+" + canon(node.b);
+      case "sub": return canon(node.a) + "-" + canon(node.b);
+      case "mul": return canon(node.a) + "*" + canon(node.b);
+      case "div": return canon(node.a) + "/" + canon(node.b);
+    }
+    return "";
+  }
+  function topTerms(node, sign, out) {
+    if (node.k === "add") { topTerms(node.a, sign, out); topTerms(node.b, sign, out); }
+    else if (node.k === "sub") { topTerms(node.a, sign, out); topTerms(node.b, -sign, out); }
+    else if (node.k === "neg") { topTerms(node.a, -sign, out); }
+    else out.push({ sign: sign, node: node });
+    return out;
+  }
+  function sideKey(node) {
+    return topTerms(node, 1, []).map(function (t) { return (t.sign < 0 ? "-" : "+") + canon(t.node); }).sort().join("|");
+  }
+  function sameStructure(e1, e2) {
+    var a1 = sideKey(e1.left), b1 = sideKey(e1.right), a2 = sideKey(e2.left), b2 = sideKey(e2.right);
+    return (a1 === a2 && b1 === b2) || (a1 === b2 && b1 === a2);
+  }
+
+  // ── Final answer form: v = number ─────────────────────────────────────
+  function isIsolated(eq, v) {
+    function bareVar(n) {
+      while (n.k === "grp") n = n.a;
+      if (n.k === "mul" && n.implicit && n.a.k === "num" && req(n.a.v, R(1))) n = n.b; // 1x is the same as x
+      return n.k === "var" && n.n === v;
+    }
+    function numericOnly(n) { try { return rzero(linear(n, v).a) && !/[a-z]/.test(canon(n)); } catch (e) { return false; } }
+    if (bareVar(eq.left) && numericOnly(eq.right)) return eq.right;
+    if (bareVar(eq.right) && numericOnly(eq.left)) return eq.left;
+    return null;
+  }
+  function inLowestTerms(node) {
+    if (node.k === "neg") return inLowestTerms(node.a);
+    if (node.k === "grp") return inLowestTerms(node.a);
+    if (isRationalLiteral(node)) {
+      var top = node.a.v, bottom = node.b.v;
+      if (top.d !== 1 || bottom.d !== 1) return false; // decimals inside a fraction
+      return bottom.n !== 1 && gcd(top.n, bottom.n) === 1;
+    }
+    if (node.k === "mixed") return node.n.v.n < node.d.v.n && gcd(node.n.v.n, node.d.v.n) === 1;
+    return node.k === "num";
+  }
+
+  /**
+   * Check a student's line against the remaining step lines.
+   * steps: array of expected line strings; from: index of the current step; maxAhead: how far ahead may be accepted.
+   * Returns { ok: true, index } or { ok: false, message }.
+   */
+  function check(input, lines, from, maxAhead, previousLine, v) {
+    var student;
+    try { student = parseEquation(input); } catch (e) { return { ok: false, message: e.message + "." }; }
+    var form;
+    try { form = equationForm(student, v); } catch (e2) { return { ok: false, message: e2.message + "." }; }
+    var cx = complexity(student.left) + complexity(student.right);
+    var previous = previousLine ? parseEquation(previousLine) : null;
+    if (previous && sameStructure(student, previous)) {
+      return { ok: false, message: "That is the same as the line before. Apply the move, then simplify." };
+    }
+    var last = Math.min(lines.length - 1, from + maxAhead);
+    var unsimplified = false;
+    var needsLowestTerms = false;
+    for (var i = last; i >= from; i--) {
+      var expected = parseEquation(lines[i]);
+      var ef = equationForm(expected, v);
+      var same = (req(form.a, ef.a) && req(form.b, ef.b)) || (req(form.a, rneg(ef.a)) && req(form.b, rneg(ef.b)));
+      if (!same) continue;
+      var finalLine = isIsolated(expected, v);
+      if (finalLine) {
+        var given = isIsolated(student, v);
+        if (!given) { unsimplified = true; continue; }
+        if (!inLowestTerms(given)) { needsLowestTerms = true; continue; }
+        return { ok: true, index: i };
+      }
+      if (cx > complexity(expected.left) + complexity(expected.right)) { unsimplified = true; continue; }
+      return { ok: true, index: i };
+    }
+    if (needsLowestTerms) return { ok: false, message: "Nearly! Write the answer as a fraction in its simplest form." };
+    if (unsimplified) return { ok: false, message: "Your line is correct but not simplified yet. Combine the numbers and like terms." };
+    // Same solution, different line: a valid equation but not the result of this move.
+    try {
+      var target = solve(lines[lines.length - 1], v);
+      if (!rzero(form.a) && target && req(rdiv(rneg(form.b), form.a), target)) {
+        return { ok: false, message: "That equation is true, but it is not the result of this move. Apply the move you chose." };
+      }
+    } catch (e3) { /* fall through */ }
+    return { ok: false, message: "That line is not balanced. Recheck the algebra on both sides." };
+  }
+
+  // ── Rendering ────────────────────────────────────────────────────────
+  function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;"); }
+  function strip(node) { return node.k === "grp" ? node.a : node; }
+  function frac(top, bottom, label) {
+    return '<span class="frac" role="math" aria-label="' + esc(label) + '"><span class="nu">' + top + '</span><span class="de">' + bottom + "</span></span>";
+  }
+  function spoken(node) {
+    return canon(node).replace(/-/g, " minus ").replace(/\+/g, " plus ").replace(/\*/g, " times ").replace(/\//g, " over ");
+  }
+  function html(node) {
+    switch (node.k) {
+      case "num": return esc(node.raw);
+      case "mixed": return esc(node.w.raw) + frac(esc(node.n.raw), esc(node.d.raw), node.w.raw + " and " + node.n.raw + " over " + node.d.raw);
+      case "var": return "<i>" + node.n + "</i>";
+      case "neg": return "−" + html(node.a);
+      case "grp": return (node.br === "[" ? "[" : "(") + html(node.a) + (node.br === "[" ? "]" : ")");
+      case "add": return html(node.a) + " + " + html(node.b);
+      case "sub": return html(node.a) + " − " + html(node.b);
+      case "mul": return node.implicit ? html(node.a) + html(node.b) : html(node.a) + " × " + html(node.b);
+      case "div": return frac(html(strip(node.a)), html(strip(node.b)), spoken(node));
+    }
+    return "";
+  }
+  function sideHTML(node, highlight) {
+    var terms = topTerms(node, 1, []);
+    return terms.map(function (t, i) {
+      var body = html(t.node);
+      var signText = i === 0 ? (t.sign < 0 ? "−" : "") : (t.sign < 0 ? " − " : " + ");
+      var hasVar = /[a-z]/.test(canon(t.node));
+      if (highlight) {
+        var lead = i === 0 ? "" : " ";
+        var inner = i === 0 ? signText + body : signText.trim() + " " + body;
+        return lead + '<mark class="term-highlight ' + (hasVar ? "variable" : "constant") + '">' + inner + "</mark>";
+      }
+      return signText + body;
+    }).join("");
+  }
+  function toHTML(line, highlight) {
+    try {
+      var eq = parseEquation(line);
+      return sideHTML(eq.left, highlight) + " = " + sideHTML(eq.right, highlight);
+    } catch (e) {
+      return esc(line);
+    }
+  }
+
+  function variableOf(line) {
+    var m = String(line).match(/[a-z]/i);
+    return m ? m[0].toLowerCase() : "x";
+  }
+
+  // ── Turning bank data into playable steps ─────────────────────────────
+  function denominators(line) {
+    var found = [];
+    function walk(n) {
+      if (!n || typeof n !== "object") return;
+      if (n.k === "div" && n.b) {
+        var d = strip(n.b);
+        if (d.k === "neg") d = d.a;
+        if (d.k === "num" && found.indexOf(d.raw) < 0) found.push(d.raw);
+      }
+      ["a", "b"].forEach(function (key) { if (n[key]) walk(n[key]); });
+    }
+    try { var eq = parseEquation(line); walk(eq.left); walk(eq.right); } catch (e) { /* ignore */ }
+    return found;
+  }
+  function pretty(text) { return String(text).replace(/-/g, "−"); }
+  function bracketIfNegative(text) { text = pretty(text); return text.charAt(0) === "−" ? "(" + text + ")" : text; }
+  function listText(items) { return items.length < 2 ? items.join("") : items.slice(0, -1).join(", ") + " and " + items[items.length - 1]; }
+
+  function makeStep(raw, previousLine, v) {
+    var op = raw[0], arg = pretty(raw[1]), line = pretty(raw[2]), opts = raw[3] || {};
+    var step = { op: op, line: line, kind: "balance" };
+    var abs = arg.replace(/^−/, "");
+    if (op === "add") {
+      step.move = "Add " + arg + " to both sides";
+      step.symbol = "+ " + arg;
+      step.hint = "Add " + arg + " to both sides so that the " + arg + " term cancels out. Then simplify each side.";
+      step.wrongMoves = ["Subtract " + arg + " from both sides", "Add " + arg + " to the left side only"];
+    } else if (op === "sub") {
+      step.move = "Subtract " + arg + " from both sides";
+      step.symbol = "− " + arg;
+      step.hint = "Subtract " + arg + " from both sides so that the " + arg + " term cancels out. Then simplify each side.";
+      step.wrongMoves = ["Add " + arg + " to both sides", "Subtract " + arg + " from the left side only"];
+    } else if (op === "mul") {
+      var dens = denominators(previousLine);
+      step.move = "Multiply both sides by " + arg;
+      step.symbol = "× " + bracketIfNegative(arg);
+      step.hint = dens.length > 1
+        ? arg + " is the L.C.M. of " + listText(dens) + ". Multiply every term on both sides by " + arg + " to clear the fractions."
+        : "Multiply both sides by " + arg + " to clear the fraction. Multiply every term on each side.";
+      step.wrongMoves = ["Divide both sides by " + arg, "Multiply the left side only by " + arg];
+    } else if (op === "div") {
+      step.move = "Divide both sides by " + arg;
+      step.symbol = "÷ " + bracketIfNegative(arg);
+      step.hint = "Divide both sides by " + arg + ", the coefficient of " + v + "." + (arg.charAt(0) === "−" ? " Take care with the signs." : "");
+      if (abs === "1") step.wrongMoves = ["Add 1 to both sides", "Divide the left side only by −1"];
+      else if (arg.charAt(0) === "−") step.wrongMoves = ["Multiply both sides by " + arg, "Divide both sides by " + abs];
+      else step.wrongMoves = ["Multiply both sides by " + arg, "Subtract " + arg + " from both sides"];
+    } else if (op === "expand") {
+      step.kind = "simplify";
+      step.move = arg;
+      step.symbol = "Expand";
+      step.hint = "Multiply every term inside the bracket by the number outside it. Take care with the signs.";
+      step.wrongMoves = ["Multiply only the first term inside the bracket", "Add the number outside the bracket to each term inside"];
+    } else if (op === "combine") {
+      step.kind = "simplify";
+      step.move = arg;
+      step.symbol = "Simplify";
+      step.hint = "Collect the like terms: add or subtract the " + v + " terms together, and the number terms together.";
+      step.wrongMoves = ["Combine a variable term with a number term", "Add the coefficients and ignore their signs"];
+    } else {
+      throw new Error("Unknown step type " + op);
+    }
+    if (opts.hint) step.hint = opts.hint;
+    if (opts.wrong) step.wrongMoves = opts.wrong.map(pretty);
+    return step;
+  }
+
+  function makeSteps(rawSteps, equation, v) {
+    var previous = equation;
+    return rawSteps.map(function (raw) {
+      var step = makeStep(raw, previous, v);
+      previous = step.line;
+      return step;
+    });
+  }
+
+  /** Build a playable question from bank data. */
+  function buildQuestion(data, meta) {
+    var equation = pretty(data.eq);
+    var v = variableOf(equation);
+    var q = {
+      id: meta.id, label: meta.label, type: meta.type, kind: meta.kind || "main", parentId: meta.parentId || null,
+      equation: equation, variable: v, steps: makeSteps(data.steps, equation, v), maxSteps: data.steps.length
+    };
+    if (data.alt) {
+      var altSteps = makeSteps(data.alt.steps, equation, v);
+      q.steps[0].alternative = { move: altSteps[0].move, steps: altSteps };
+    }
+    var valid = [q.steps[0].move].concat(q.steps[0].alternative ? [q.steps[0].alternative.move] : []);
+    q.steps.forEach(function (step, i) {
+      step.wrongMoves = step.wrongMoves.filter(function (w) { return w !== step.move && (i > 0 || valid.indexOf(w) < 0); });
+    });
+    return q;
+  }
+
+  function labelFor(item) {
+    return "Teaching Example " + item.example + (item.part ? " (" + item.part + ")" : "");
+  }
+  function shortLabel(item) {
+    return item.example.replace(" (Extra)", "E") + (item.part ? item.part : "");
+  }
+
+  return {
+    buildQuestion: buildQuestion, labelFor: labelFor, shortLabel: shortLabel, makeSteps: makeSteps,
+    parseEquation: parseEquation, solve: solve, complexity: complexity, check: check, toHTML: toHTML,
+    variableOf: variableOf, rText: rText, sameStructure: sameStructure, equationForm: equationForm, isIsolated: isIsolated
+  };
+})();
+</script>

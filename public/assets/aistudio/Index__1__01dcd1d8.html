@@ -1,0 +1,989 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Balance Quest — S1 Linear Equations</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=STIX+Two+Text:ital,wght@0,400;0,600;1,400;1,600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      color-scheme: light;
+      --paper: #FBFDFF;
+      --grid: #DFEAF6;
+      --ink: #1B2A6B;
+      --soft: #56639A;
+      --line: #C3D0EA;
+      --yellow: #FFE45C;
+      --yellow-ink: #1B2A6B;
+      --red: #D23232;
+      --green: #14905A;
+      --margin: #F2A0A0;
+      --panel: #EEF3FB;
+      --key: #FFFFFF;
+      --key-edge: #BCC8E6;
+      --term-constant: #CDEBFF;
+      --term-constant-ink: #143B61;
+      --ui: 'Bricolage Grotesque', 'Segoe UI', system-ui, sans-serif;
+      --math: 'STIX Two Text', 'Cambria Math', Cambria, 'Times New Roman', serif;
+      box-sizing: border-box;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        color-scheme: dark;
+        --paper: #0F1730;
+        --grid: #1A2647;
+        --ink: #E4EAFF;
+        --soft: #A3AFD8;
+        --line: #2C3A6A;
+        --yellow: #E9CF3A;
+        --yellow-ink: #14204F;
+        --red: #FF7070;
+        --green: #3DD598;
+        --margin: #7A3A4A;
+        --panel: #141E3D;
+        --key: #18224A;
+        --key-edge: #2E3C70;
+        --term-constant: #305D88;
+        --term-constant-ink: #F4FAFF;
+      }
+    }
+    *, *::before, *::after { box-sizing: inherit; }
+    html { min-height: 100%; }
+    body {
+      min-height: 100vh;
+      margin: 0;
+      color: var(--ink);
+      font: 17px/1.5 var(--ui);
+      background-color: var(--paper);
+      background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+      background-size: 26px 26px;
+    }
+    button { color: inherit; font: inherit; }
+    button:focus-visible { outline: 3px solid var(--yellow); outline-offset: 3px; }
+    [hidden] { display: none !important; }
+    .wrap { width: min(1100px, 100%); margin: 0 auto; padding: 16px 18px 42px; }
+    .top {
+      display: flex; align-items: center; flex-wrap: wrap; gap: 14px;
+      padding: 6px 0 14px; margin-bottom: 20px; border-bottom: 2px solid var(--ink);
+    }
+    .brand { margin: 0; font-size: 1.35rem; font-weight: 800; letter-spacing: -.03em; white-space: nowrap; }
+    .brand span { font: italic 600 1.1em var(--math); }
+    .progress { display: flex; flex: 1; min-width: 160px; gap: 6px; margin: 0; padding: 0 0 3px; overflow-x: auto; scrollbar-width: thin; list-style: none; }
+    .progress li {
+      display: grid; width: 26px; height: 30px; flex: 0 0 26px; place-items: center;
+      border: 2px solid var(--ink); border-radius: 7px; background: var(--paper); font-size: .82rem; font-weight: 700;
+    }
+    .progress li.now { background: var(--yellow); color: var(--yellow-ink); }
+    .progress li.done { background: var(--ink); color: var(--paper); }
+    .score { display: flex; align-items: baseline; gap: 8px; padding: 3px 13px; border: 2px solid var(--ink); border-radius: 10px; background: var(--paper); }
+    .score small { color: var(--soft); font-size: .8rem; }
+    .score b { min-width: 3ch; text-align: right; font-size: 1.4rem; font-variant-numeric: tabular-nums; }
+    .linkbtn { padding: 4px; border: 0; background: none; color: var(--soft); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+    .math { font-family: var(--math); }
+    .frac { display: inline-flex; flex-direction: column; align-items: stretch; vertical-align: middle; margin: 0 .1em; text-align: center; font-size: .82em; line-height: 1.08; white-space: nowrap; }
+    .frac .nu { padding: 0 .18em .05em; border-bottom: .08em solid currentColor; }
+    .frac .de { padding: .05em .18em 0; }
+    .btn {
+      padding: 12px 22px; border: 2px solid var(--ink); border-radius: 12px;
+      background: var(--ink); color: var(--paper); font-weight: 800; font-size: 1.05rem;
+      box-shadow: 0 4px 0 var(--soft); cursor: pointer; transition: transform .06s;
+    }
+    .btn:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--soft); }
+    .btn.ghost { background: var(--paper); color: var(--ink); }
+    .intro { display: grid; grid-template-columns: 1.1fr .9fr; gap: 38px; align-items: center; padding: 28px 0 16px; }
+    .hero { font: clamp(1.7rem, 4vw, 2.7rem)/1.25 var(--math); }
+    .hero .eyebrow { display: block; margin-bottom: 8px; color: var(--soft); font: 800 .42em var(--ui); letter-spacing: .08em; text-transform: uppercase; }
+    .hero .hero-line { display: grid; grid-template-columns: auto auto 1fr; align-items: center; gap: .25em; }
+    .hero .arrow { color: var(--soft); }
+    .hero .ph { opacity: .45; }
+    .intro h1 { margin: 22px 0 10px; font-size: clamp(1.7rem, 3.5vw, 2.3rem); line-height: 1.08; letter-spacing: -.03em; }
+    .lead { max-width: 48ch; margin: 0 0 22px; color: var(--soft); }
+    .rules { padding: 21px 24px; border: 2px solid var(--ink); border-radius: 14px; background: var(--paper); }
+    .rules h2 { margin: 0 0 10px; font-size: 1.15rem; }
+    .rules ul { margin: 0; padding-left: 1.2em; }
+    .rules li { margin: 7px 0; }
+    .level-guide { display: grid; gap: 7px; margin-top: 16px; padding-top: 12px; border-top: 1px dashed var(--line); }
+    .level-guide p { margin: 0; color: var(--soft); font-size: .88rem; }
+    .level-guide b { color: var(--ink); }
+    .points { color: var(--green); font-weight: 800; }
+    .tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+    .tags span, .pill {
+      padding: 3px 10px; border: 1.5px solid var(--line); border-radius: 8px;
+      background: var(--panel); color: var(--ink); font-size: .88rem; font-weight: 600;
+    }
+    .cta { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+    .level-buttons { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+    .level-btn { display: flex; min-height: 76px; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; padding: 10px 14px; text-align: left; }
+    .level-btn small { font-size: .78rem; font-weight: 600; opacity: .82; }
+    .play-all-btn { grid-column: 1 / -1; justify-self: start; }
+    .play { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(300px, .7fr); gap: 26px; align-items: start; }
+    .sheet { position: relative; min-height: 430px; padding: 21px 24px 28px 84px; border: 2px solid var(--ink); border-radius: 14px; background: var(--paper); }
+    .sheet::before { position: absolute; top: 0; bottom: 0; left: 70px; width: 2px; background: var(--margin); content: ""; }
+    .qmeta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; align-items: baseline; }
+    .qmeta h2 { margin: 0; font-size: 1.28rem; letter-spacing: -.02em; }
+    .type { color: var(--soft); font-size: .9rem; }
+    .tip { margin: 5px 0 15px; color: var(--soft); font-size: .94rem; }
+    .prompt { padding: 9px 0 14px; border-bottom: 1px dashed var(--line); font-size: 1.06rem; }
+    .prompt .equation { display: block; margin-top: 4px; font: 1.75rem var(--math); }
+    .term-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 9px; }
+    .highlight-btn { padding: 5px 10px; border: 1.5px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--ink); font-size: .82rem; font-weight: 700; cursor: pointer; }
+    .highlight-status { color: var(--soft); font-size: .78rem; }
+    .term-highlight { border-radius: .2em; padding: 0 .06em; box-shadow: inset 0 -.1em 0 rgb(0 0 0 / 8%); }
+    .term-highlight.variable { background: var(--yellow); color: var(--yellow-ink); }
+    .term-highlight.constant { background: var(--term-constant); color: var(--term-constant-ink); }
+    .work { display: grid; grid-template-columns: 74px minmax(0, 1fr); align-items: center; }
+    .workrow { display: contents; }
+    .workrow > * { min-height: 3.5rem; padding: 9px 0; border-bottom: 1px dashed var(--line); }
+    .stepmark { position: relative; color: var(--soft); font-size: .75rem; font-weight: 800; text-align: right; padding-right: 12px !important; }
+    .stepmark span { position: absolute; left: -74px; width: 62px; }
+    .stepmark.active span { display: inline-block; padding: 2px 7px; border-radius: 6px; background: var(--yellow); color: var(--yellow-ink); }
+    .stepmark.complete { color: var(--green); }
+    .workline { overflow-wrap: anywhere; font: clamp(1.22rem, 2.5vw, 1.65rem) var(--math); }
+    .work-note { display: block; padding-top: 2px; color: var(--soft); font: .78rem var(--ui); }
+    .workrow.active .workline { border-bottom: 2px solid var(--ink); }
+    .workrow.pending .workline { color: var(--soft); letter-spacing: .18em; }
+    .side { position: sticky; top: 12px; }
+    .screen { margin-bottom: 10px; padding: 11px 14px; border: 2px solid var(--ink); border-radius: 14px; background: var(--panel); }
+    .screen .label { color: var(--soft); font-size: .82rem; }
+    .screen .val { min-height: 2.8rem; overflow-x: auto; white-space: nowrap; font: 1.65rem var(--math); }
+    .feedback { min-height: 1.6rem; margin: 0 0 8px; font-weight: 700; }
+    .feedback.ok { color: var(--green); }
+    .feedback.bad { color: var(--red); }
+    .feedback.note { color: var(--soft); }
+    .choices { display: grid; gap: 9px; }
+    .choice {
+      width: 100%; min-height: 57px; padding: 10px 13px; border: 2px solid var(--key-edge);
+      border-radius: 12px; background: var(--key); box-shadow: 0 3px 0 var(--key-edge);
+      font: 1.25rem var(--math); text-align: left; cursor: pointer; touch-action: manipulation;
+    }
+    .choice:hover { border-color: var(--ink); }
+    .choice:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--key-edge); }
+    .move-choice { font: 700 1rem var(--ui); }
+    .move-choice .letter { display: inline-grid; width: 1.7em; height: 1.7em; place-items: center; margin-right: 7px; border: 1px solid var(--line); border-radius: 6px; color: var(--soft); font-size: .8em; }
+    .move-trace { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0 0 12px; }
+    .move-trace.simplify { grid-template-columns: 1fr; }
+    .move-caption { grid-column: 1 / -1; margin: 0; color: var(--soft); font-size: .84rem; }
+    .move-caption b { color: var(--ink); }
+    .move-side { padding: 8px 10px; border: 1.5px solid var(--line); border-radius: 9px; background: var(--panel); }
+    .move-side small { display: block; color: var(--soft); font-size: .76rem; }
+    .move-side b { font: 600 1.1rem var(--math); }
+    .answerform label { display: block; margin: 5px 0 4px; font-weight: 700; font-size: .92rem; }
+    .answerform input { width: 100%; min-height: 48px; padding: 8px 11px; border: 2px solid var(--key-edge); border-radius: 10px; background: var(--paper); color: var(--ink); font: 1.25rem var(--math); }
+    .answerform input:focus { border-color: var(--ink); outline: 3px solid var(--yellow); outline-offset: 1px; }
+    .keypad { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; margin-top: 9px; }
+    .padkey { min-width: 0; height: 43px; padding: 0 4px; border: 2px solid var(--key-edge); border-radius: 9px; background: var(--key); box-shadow: 0 2px 0 var(--key-edge); font-size: 1rem; font-weight: 700; cursor: pointer; touch-action: manipulation; }
+    .padkey.op { font: 600 1.25rem var(--math); }
+    .padkey.variable { background: var(--yellow); color: var(--yellow-ink); font: italic 600 1.15rem var(--math); }
+    .padkey.action { color: var(--soft); font-size: .76rem; }
+    .padkey:active { transform: translateY(2px); box-shadow: 0 0 0 var(--key-edge); }
+    .answerform .btn { width: 100%; margin-top: 9px; padding: 9px 16px; font-size: .98rem; }
+    .answer-help { margin: 6px 0 0; color: var(--soft); font-size: .8rem; }
+    .hint { margin: 10px 0; padding: 10px 13px; border-left: 5px solid var(--yellow-ink); border-radius: 10px; background: var(--yellow); color: var(--yellow-ink); }
+    .hint b { display: block; font-size: .84rem; }
+    .hint p { margin: 3px 0 0; }
+    .hintbtn { margin: 7px 0 0; padding: 4px 0; border: 0; background: none; color: var(--soft); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+    .typehelp { margin: 13px 0 0; color: var(--soft); font-size: .83rem; }
+    .complete-box { padding: 17px 15px; border: 2px solid var(--green); border-radius: 12px; background: var(--paper); }
+    .complete-box b { display: block; color: var(--green); font-size: 1.15rem; }
+    .complete-box span { color: var(--soft); }
+    .shake { animation: shake .32s; }
+    @keyframes shake { 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
+    .win { padding: 28px 0 8px; text-align: center; }
+    .win h1 { margin: 10px 0 4px; font-size: clamp(2rem, 5vw, 3rem); letter-spacing: -.04em; }
+    .win > p { margin: 0 0 22px; color: var(--soft); }
+    .trophy { width: min(220px, 55vw); height: auto; color: var(--gold, #E3A400); animation: rise .75s cubic-bezier(.2, 1.4, .4, 1); }
+    @keyframes rise { from { opacity: 0; transform: translateY(25px) scale(.75); } to { opacity: 1; transform: none; } }
+    .stats { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin: 0 0 24px; }
+    .stat { min-width: 130px; padding: 10px 18px; border: 2px solid var(--ink); border-radius: 12px; background: var(--paper); }
+    .stat b { display: block; font-size: 1.55rem; }
+    .stat span { color: var(--soft); font-size: .86rem; }
+    .win .cta { justify-content: center; }
+    .completion { margin-top: 16px; padding: 14px 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); }
+    .completion .trophy { width: min(105px, 30vw); }
+    .completion h1 { margin: 5px 0 4px; font-size: clamp(1.35rem, 2.5vw, 1.8rem); }
+    .completion > p { margin: 0 0 13px; font-size: .88rem; }
+    .completion .stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 14px; }
+    .completion .stat { min-width: 0; padding: 8px 5px; }
+    .completion .stat b { font-size: 1.15rem; }
+    .completion .stat span { font-size: .75rem; }
+    .brand small { display: block; margin-top: -2px; color: var(--soft); font: 700 .7rem var(--ui); letter-spacing: .06em; text-transform: uppercase; }
+    .progress li.extra { width: auto; min-width: 26px; padding: 0 5px; border-style: dashed; }
+    .progress li.extra.now { border-style: solid; }
+    .who { color: var(--soft); font-size: .82rem; }
+    .card { padding: 21px 24px; border: 2px solid var(--ink); border-radius: 14px; background: var(--paper); }
+    .card h2 { margin: 0 0 6px; font-size: 1.15rem; }
+    .card .muted, .muted { color: var(--soft); font-size: .9rem; }
+    .profile-form { display: grid; grid-template-columns: 1fr 110px 110px; gap: 10px; margin: 14px 0 6px; }
+    .profile-form label { display: grid; gap: 4px; font-size: .86rem; font-weight: 700; }
+    .profile-form input, .profile-form select {
+      width: 100%; min-height: 46px; padding: 8px 11px; border: 2px solid var(--key-edge); border-radius: 10px;
+      background: var(--paper); color: var(--ink); font: 1.05rem var(--ui);
+    }
+    .profile-form input:focus, .profile-form select:focus { border-color: var(--ink); outline: 3px solid var(--yellow); outline-offset: 1px; }
+    .profile-form .name-field { grid-column: 1 / -1; }
+    .form-error { min-height: 1.3rem; margin: 4px 0 8px; color: var(--red); font-size: .88rem; font-weight: 700; }
+    .me-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 14px; margin: 10px 0 14px; }
+    .me-line b { font-size: 1.15rem; }
+    .meter { height: 12px; margin: 6px 0 4px; overflow: hidden; border: 2px solid var(--ink); border-radius: 8px; background: var(--panel); }
+    .meter span { display: block; height: 100%; background: var(--green); }
+    .stat-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 18px; }
+    .stat-row .pill b { font-variant-numeric: tabular-nums; }
+    .loading { padding: 70px 0; color: var(--soft); text-align: center; font-size: 1.1rem; }
+    .error-box { max-width: 620px; margin: 40px auto; padding: 22px 24px; border: 2px solid var(--red); border-radius: 14px; background: var(--paper); }
+    .error-box h2 { margin: 0 0 8px; color: var(--red); }
+    .boards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px; align-items: start; }
+    .board h2 { margin: 0; font-size: 1.15rem; }
+    .board table { width: 100%; margin-top: 10px; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+    .board th { padding: 6px 8px; border-bottom: 2px solid var(--ink); color: var(--soft); font-size: .78rem; text-align: left; text-transform: uppercase; letter-spacing: .04em; }
+    .board td { padding: 8px; border-bottom: 1px dashed var(--line); }
+    .board td.num, .board th.num { text-align: right; }
+    .board tr.me td { background: var(--yellow); color: var(--yellow-ink); font-weight: 800; }
+    .rank { display: inline-grid; width: 1.9em; height: 1.9em; place-items: center; border: 2px solid var(--line); border-radius: 50%; font-weight: 800; font-size: .85rem; }
+    .rank.r1 { border-color: #E3A400; background: #FFE9A8; color: #6A4A00; }
+    .rank.r2 { border-color: #9AA7BF; background: #E7ECF5; color: #2D3A55; }
+    .rank.r3 { border-color: #C47B3A; background: #F8DCC2; color: #5A320D; }
+    .board-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 18px; }
+    .board-head h1 { margin: 0; font-size: clamp(1.5rem, 3vw, 2rem); letter-spacing: -.03em; }
+    .myrank { margin: 10px 0 0; color: var(--soft); font-size: .9rem; }
+    .empty { padding: 14px 8px; color: var(--soft); }
+    .complete-box .btn { margin-top: 10px; padding: 8px 14px; font-size: .95rem; }
+    .practice-tag { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 6px; background: var(--yellow); color: var(--yellow-ink); font-size: .75rem; font-weight: 800; }
+    @media (max-width: 840px) { .boards { grid-template-columns: 1fr; } }
+    @media (max-width: 560px) { .profile-form { grid-template-columns: 1fr 1fr; } .card { padding: 16px; } .who { display: none; } }
+    @media (max-width: 840px) {
+      .intro { grid-template-columns: 1fr; gap: 22px; padding-top: 10px; }
+      .play { grid-template-columns: 1fr; gap: 16px; }
+      .side { position: static; }
+      .sheet { min-height: 0; padding: 18px 15px 20px 70px; }
+      .sheet::before { left: 57px; }
+      .stepmark span { left: -66px; width: 54px; }
+    }
+    @media (max-width: 560px) {
+      .wrap { padding: 12px 10px 30px; }
+      .top { gap: 9px; }
+      .brand { flex: 1; font-size: 1.1rem; }
+      .progress { order: 4; flex: 0 0 100%; }
+      .level-buttons { grid-template-columns: 1fr; }
+      .play-all-btn { grid-column: auto; }
+      .progress li { width: 24px; height: 26px; flex: 0 0 24px; font-size: .76rem; }
+      .score { padding: 2px 9px; }
+      .score b { font-size: 1.18rem; }
+      .sheet { padding-left: 63px; }
+      .sheet::before { left: 51px; }
+      .work { grid-template-columns: 60px minmax(0, 1fr); }
+      .stepmark span { left: -57px; width: 48px; }
+      .workrow > * { min-height: 3.1rem; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header class="top">
+      <h1 class="brand">Balance <span>Quest</span><small>S1 · Linear equations</small></h1>
+      <ol class="progress" id="progress" aria-label="Question progress" hidden></ol>
+      <div class="score" id="scoreBox" hidden><small id="scoreLabel">Score</small><b id="score">0</b></div>
+      <button class="linkbtn" id="boardButton" type="button" hidden>Leaderboard</button>
+      <button class="linkbtn" id="soundButton" type="button" aria-pressed="true">Sound: On</button>
+      <button class="linkbtn" id="homeButton" type="button" hidden>Home</button>
+      <a class="linkbtn" id="teacherLink" href="#" target="_top" hidden>Teacher dashboard</a>
+    </header>
+
+    <section id="loadingView" class="loading">Signing you in with your school Google account…</section>
+
+    <section id="errorView" hidden>
+      <div class="error-box"><h2>Cannot open Balance Quest</h2><p id="errorMessage"></p></div>
+    </section>
+
+    <section class="intro" id="introView" hidden>
+      <div>
+        <div class="hero" aria-label="Example solving steps">
+          <span class="eyebrow">One step at a time</span>
+          <div class="hero-line"><span>3<i>x</i> + 5 = 20</span><span class="arrow">→</span><span>3<i>x</i> = 15</span></div>
+          <div class="hero-line"><span class="ph">3<i>x</i> = 15</span><span class="arrow">→</span><span><i>x</i> = 5</span></div>
+        </div>
+        <h1>Find the value. Keep both sides balanced.</h1>
+        <p class="lead">Solve 28 rounds following Teaching Examples 4.1 to 4.10, in order. Each round picks one of 4 versions of the question at random. Choose a balanced move, apply it to both sides, then write the new equation.</p>
+        <div class="card" id="meCard"></div>
+      </div>
+      <aside class="rules">
+        <h2>How to play</h2>
+        <ul>
+          <li>Choose a move, then apply it to both sides of the equation.</li>
+          <li>Type the new line after simplifying. Answers can be integers, fractions such as <span class="math">−20/3</span>, or decimals.</li>
+          <li>Use the highlight button to tell variable terms from constants. Use a hint if you get stuck.</li>
+          <li>You may enter a line up to 2 steps ahead. The skipped steps still count.</li>
+          <li>If you make a mistake in any step, you must also solve <b>one similar question</b> straight after it.</li>
+          <li><span class="points">10 points</span> for each step solved without a hint or retry; <span class="points">5 points</span> after a hint or retry. Similar questions give no points.</li>
+          <li>Your progress is saved after every question, so you can stop and continue later.</li>
+        </ul>
+        <div class="level-guide" aria-label="Question sets">
+          <p><b>Examples 4.1 – 4.3</b><br>One-step and two-step equations, fractions and brackets.</p>
+          <p><b>Examples 4.4 – 4.7</b><br>Like terms, unknowns on both sides and nested brackets.</p>
+          <p><b>Examples 4.8 – 4.10</b><br>Equations with fractions: multiply by the L.C.M. of the denominators.</p>
+        </div>
+      </aside>
+    </section>
+
+    <section id="gameView" hidden>
+      <div class="play">
+        <article class="sheet" id="sheet" aria-label="Working area"></article>
+        <aside class="side">
+          <div class="screen">
+            <div class="label" id="screenLabel">Your current equation</div>
+            <div class="val" id="currentEquation"></div>
+          </div>
+          <p class="feedback note" id="feedback" aria-live="polite">Choose a move to apply.</p>
+          <div class="choices" id="choices"></div>
+          <div id="hintBox" class="hint" hidden></div>
+          <button class="hintbtn" id="hintButton" type="button">Show a hint</button>
+          <p class="typehelp">Tip: whatever you do to one side, do to the other.</p>
+          <section id="finishView" class="win completion" hidden>
+            <svg class="trophy" viewBox="0 0 220 220" role="img" aria-label="Trophy">
+              <path fill="currentColor" d="M61 28h98v45c0 35-20 58-42 64v23h34v20H69v-20h34v-23C81 131 61 108 61 73V28zm18 18v27c0 24 12 40 31 46 19-6 31-22 31-46V46H79z"/>
+              <path fill="none" stroke="currentColor" stroke-width="13" stroke-linecap="round" d="M61 48H35v23c0 25 15 39 37 39M159 48h26v23c0 25-15 39-37 39"/>
+              <path fill="currentColor" d="m110 59 8 16 18 3-13 12 3 18-16-9-16 9 3-18-13-12 18-3z"/>
+            </svg>
+            <h1>Equation champion!</h1>
+            <p id="finishMessage">You completed all 28 questions.</p>
+            <div class="stats">
+              <div class="stat"><b id="finalScore">0</b><span>Points</span></div>
+              <div class="stat"><b id="finalDone">0</b><span>Questions</span></div>
+              <div class="stat"><b id="finalExtra">0</b><span>Similar questions</span></div>
+              <div class="stat"><b id="finalRank">–</b><span>Rank in class</span></div>
+            </div>
+            <div class="cta" style="justify-content:center"><button class="btn" id="finishBoardButton" type="button">Leaderboard</button><button class="btn ghost" id="practiceButton" type="button">Practise again</button></div>
+          </section>
+        </aside>
+      </div>
+    </section>
+
+    <section id="boardView" hidden>
+      <div class="board-head">
+        <h1>Leaderboard</h1>
+        <button class="btn ghost" id="boardBackButton" type="button">Back</button>
+      </div>
+      <div id="boardContent" class="loading">Loading…</div>
+    </section>
+  </main>
+
+  <?!= include('Engine'); ?>
+  <script>
+    const BANK = <?!= bankJson ?>;
+    const APP = <?!= appJson ?>;
+    const $ = function (id) { return document.getElementById(id); };
+    const MAIN = BANK.map(function (item, index) {
+      return { index: index, id: item.id, item: item, label: Engine.labelFor(item), short: Engine.shortLabel(item) };
+    });
+    let me = null;          // signed-in student info from the server
+    let game = null;        // the question being played
+    let session = null;     // { mode: "record" | "practice", state: { pos, pending } }
+    let lastView = "intro";
+    const sound = { enabled: true, context: null };
+
+    // ── Server calls ─────────────────────────────────────────────────
+    function server(name) {
+      const args = Array.prototype.slice.call(arguments, 1);
+      return new Promise(function (resolve, reject) {
+        google.script.run.withSuccessHandler(resolve).withFailureHandler(function (error) {
+          reject(error && error.message ? error : new Error(String(error)));
+        })[name].apply(null, args);
+      });
+    }
+
+    function esc(text) {
+      return String(text == null ? "" : text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+
+    function shuffled(items) {
+      const copy = items.slice();
+      for (let i = copy.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        const temp = copy[i]; copy[i] = copy[j]; copy[j] = temp;
+      }
+      return copy;
+    }
+
+    // ── Questions ────────────────────────────────────────────────────
+    // id is "4.1a" (the doc question) or "4.1a#s2" (similar question 2). kind: "main" round or "extra" after a mistake.
+    function questionById(id, kind) {
+      const parts = id.split("#s");
+      const main = MAIN.find(function (m) { return m.id === parts[0]; });
+      if (!main) throw new Error("Unknown question " + id);
+      const data = parts.length === 1 ? main.item : main.item.sims[Number(parts[1]) - 1];
+      return Engine.buildQuestion(data, { id: id, label: (kind === "extra" ? "Similar to " : "") + main.label, type: main.item.type, kind: kind, parentId: main.id });
+    }
+
+    function versionsOf(mainId) {
+      return [mainId, mainId + "#s1", mainId + "#s2", mainId + "#s3"];
+    }
+
+    function questionForState(state, mode) {
+      if (state.pending) return questionById(state.pending.extraId, "extra");
+      if (state.pos >= MAIN.length) return null;
+      if (mode === "practice") return questionById(state.practiceIds[state.pos], "main");
+      return questionById(state.roundId || MAIN[state.pos].id, "main");
+    }
+
+    // ── Sound ────────────────────────────────────────────────────────
+    function playTone(frequency, duration, delay, volume) {
+      if (!sound.enabled) return;
+      const AudioContextType = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextType) return;
+      try {
+        if (!sound.context) sound.context = new AudioContextType();
+        if (sound.context.state === "suspended") sound.context.resume();
+        const oscillator = sound.context.createOscillator();
+        const gain = sound.context.createGain();
+        const start = sound.context.currentTime + delay;
+        oscillator.type = "sine";
+        oscillator.frequency.setValueAtTime(frequency, start);
+        gain.gain.setValueAtTime(0.0001, start);
+        gain.gain.exponentialRampToValueAtTime(volume, start + 0.012);
+        gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+        oscillator.connect(gain);
+        gain.connect(sound.context.destination);
+        oscillator.start(start);
+        oscillator.stop(start + duration + 0.02);
+      } catch (error) { /* Audio is optional. */ }
+    }
+
+    function playSound(kind) {
+      if (kind === "wrong") playTone(190, 0.16, 0, 0.07);
+      else if (kind === "correct") { playTone(620, 0.12, 0, 0.055); playTone(820, 0.16, 0.1, 0.055); }
+      else if (kind === "complete") { playTone(523, 0.16, 0, 0.05); playTone(659, 0.16, 0.14, 0.05); playTone(784, 0.28, 0.28, 0.06); }
+    }
+
+    function syncSoundButton() {
+      $("soundButton").textContent = sound.enabled ? "Sound: On" : "Sound: Off";
+      $("soundButton").setAttribute("aria-pressed", String(sound.enabled));
+    }
+
+    // ── Views ────────────────────────────────────────────────────────
+    function setView(which) {
+      ["loadingView", "errorView", "introView", "gameView", "boardView"].forEach(function (id) {
+        $(id).hidden = id !== which + "View";
+      });
+      if (which !== "game") $("finishView").hidden = true;
+      $("progress").hidden = which !== "game";
+      $("scoreBox").hidden = which !== "game";
+      $("homeButton").hidden = which === "intro" || which === "loading" || which === "error";
+      $("boardButton").hidden = !me || !me.student || which === "board" || which === "loading" || which === "error";
+      if (which !== "board") lastView = which;
+      window.scrollTo(0, 0);
+    }
+
+    function showError(message) {
+      $("errorMessage").textContent = message;
+      setView("error");
+    }
+
+    function studentState() {
+      return me.student.state || { pos: 0, pending: null };
+    }
+
+    function renderIntro() {
+      const card = $("meCard");
+      const s = me.student;
+      let html;
+      if (!s || me.editingProfile) {
+        const classOptions = APP.classes.map(function (c) {
+          return '<option value="' + esc(c) + '"' + (s && s.cls === c ? " selected" : "") + ">" + esc(c) + "</option>";
+        }).join("");
+        html = '<h2>' + (s ? "Edit your details" : "Before you start") + '</h2>' +
+          '<p class="muted">Signed in as <b>' + esc(me.email) + '</b>. Enter your details so your teacher can see your progress.</p>' +
+          '<form id="profileForm" class="profile-form" autocomplete="off">' +
+          '<label class="name-field">Full name<input id="nameInput" maxlength="40" required placeholder="e.g. Chan Tai Man" value="' + esc(s ? s.name : "") + '"></label>' +
+          '<label>Class<select id="classInput" required><option value="">Choose</option>' + classOptions + '</select></label>' +
+          '<label>Class no.<input id="classNoInput" type="number" min="1" max="' + APP.maxClassNumber + '" inputmode="numeric" required value="' + esc(s ? s.classNo : "") + '"></label>' +
+          '</form><p class="form-error" id="profileError" aria-live="polite"></p>' +
+          '<div class="cta"><button class="btn" id="saveProfileButton" type="button">' + (s ? "Save details" : "Save and start") + '</button>' +
+          (s ? '<button class="btn ghost" id="cancelProfileButton" type="button">Cancel</button>' : "") + '</div>';
+      } else {
+        const state = studentState();
+        const finished = !state.pending && state.pos >= MAIN.length;
+        const percent = Math.round((state.pos / MAIN.length) * 100);
+        const startLabel = finished ? "Practise again" : (state.pos === 0 && !state.pending ? "Start question 1" : "Continue · " + (state.pending ? "similar question" : "question " + (state.pos + 1)));
+        html = '<h2>' + esc(s.name) + '</h2>' +
+          '<p class="muted">Class ' + esc(s.cls) + ' · No. ' + esc(s.classNo) + ' · ' + esc(me.email) + ' · <button class="linkbtn" id="editProfileButton" type="button" style="padding:0">Edit details</button></p>' +
+          '<div class="meter" role="progressbar" aria-valuemin="0" aria-valuemax="' + MAIN.length + '" aria-valuenow="' + state.pos + '"><span style="width:' + percent + '%"></span></div>' +
+          '<div class="stat-row"><span class="pill"><b>' + state.pos + '</b> / ' + MAIN.length + ' questions</span><span class="pill"><b>' + s.score + '</b> points</span><span class="pill"><b>' + s.extraDone + '</b> similar questions done</span>' + (finished ? '<span class="pill">Completed ✓</span>' : "") + '</div>' +
+          '<div class="cta"><button class="btn" id="startButton" type="button">' + startLabel + '</button><button class="btn ghost" id="introBoardButton" type="button">Leaderboard</button></div>' +
+          (finished ? '<p class="muted" style="margin-top:12px">Well done — all 28 questions are complete. Practice mode picks new random versions and does not change your score.</p>' : "");
+      }
+      card.innerHTML = html;
+      if ($("saveProfileButton")) {
+        $("saveProfileButton").addEventListener("click", saveProfile);
+        $("profileForm").addEventListener("submit", function (event) { event.preventDefault(); saveProfile(); });
+        if ($("cancelProfileButton")) $("cancelProfileButton").addEventListener("click", function () { me.editingProfile = false; renderIntro(); });
+      }
+      if ($("editProfileButton")) $("editProfileButton").addEventListener("click", function () { me.editingProfile = true; renderIntro(); });
+      if ($("startButton")) $("startButton").addEventListener("click", function () {
+        const state = studentState();
+        if (!state.pending && state.pos >= MAIN.length) startPractice(); else startRecorded();
+      });
+      if ($("introBoardButton")) $("introBoardButton").addEventListener("click", showBoard);
+      $("teacherLink").hidden = !me.isTeacher;
+      if (me.isTeacher) $("teacherLink").href = me.teacherUrl;
+      setView("intro");
+    }
+
+    function saveProfile() {
+      const name = $("nameInput").value.trim().replace(/\s+/g, " ");
+      const cls = $("classInput").value;
+      const classNo = Number($("classNoInput").value);
+      const error = $("profileError");
+      if (!name) { error.textContent = "Please enter your full name."; return; }
+      if (!cls) { error.textContent = "Please choose your class."; return; }
+      if (!Number.isInteger(classNo) || classNo < 1 || classNo > APP.maxClassNumber) { error.textContent = "Please enter your class number (1–" + APP.maxClassNumber + ")."; return; }
+      error.textContent = "";
+      const button = $("saveProfileButton");
+      button.disabled = true;
+      button.textContent = "Saving…";
+      const isNew = !me.student;
+      server("saveProfile", { name: name, cls: cls, classNo: classNo }).then(function (student) {
+        me.student = student;
+        me.editingProfile = false;
+        if (isNew) startRecorded(); else renderIntro();
+      }).catch(function (err) {
+        button.disabled = false;
+        button.textContent = isNew ? "Save and start" : "Save details";
+        error.textContent = err.message;
+      });
+    }
+
+    // ── Starting a run ───────────────────────────────────────────────
+    function startRecorded() {
+      session = { mode: "record", state: JSON.parse(JSON.stringify(studentState())), score: me.student.score };
+      beginQuestion();
+    }
+
+    function startPractice() {
+      session = {
+        mode: "practice", score: 0, extraDone: 0,
+        state: { pos: 0, pending: null, practiceIds: MAIN.map(function (m) { const v = versionsOf(m.id); return v[Math.floor(Math.random() * v.length)]; }) }
+      };
+      beginQuestion();
+    }
+
+    function beginQuestion() {
+      const q = questionForState(session.state, session.mode);
+      if (!q) { showFinish(); return; }
+      game = {
+        q: q, stepIndex: 0, history: [{ line: q.equation, note: "Starting equation", stepNumber: 0 }], phase: "move", selectedMove: "",
+        tries: 0, hintSeen: false, hintOpen: false, hadError: false, highlightMode: -1, path: q.steps,
+        earned: 0, firstTrySteps: 0, wrongMoves: 0, wrongLines: 0, hints: 0, skipped: 0, wrongInputs: [],
+        startedAt: Date.now(), saving: false, saveError: "", finished: false,
+        feedback: "Choose a move to apply.", feedbackType: "note"
+      };
+      setView("game");
+      renderGame();
+    }
+
+    // ── Rendering the game ───────────────────────────────────────────
+    function renderProgress() {
+      const state = session.state;
+      const items = [];
+      MAIN.forEach(function (m, i) {
+        const done = i < state.pos;
+        const current = !state.pending && i === state.pos;
+        items.push('<li class="' + (done ? "done" : (current ? "now" : "")) + '" title="' + esc(m.label) + '" aria-label="Question ' + (i + 1) + ", " + (done ? "complete" : (current ? "current" : "up next")) + '">' + (done ? "✓" : String(i + 1)) + "</li>");
+        if (state.pending && i === state.pos - 1) {
+          items.push('<li class="extra now" title="Similar question" aria-label="Similar question, current">+</li>');
+        }
+      });
+      $("progress").innerHTML = items.join("");
+      const current = $("progress").querySelector(".now");
+      if (current && current.scrollIntoView) current.scrollIntoView({ block: "nearest", inline: "center" });
+      $("scoreLabel").textContent = session.mode === "practice" ? "Practice" : "Score";
+      $("score").textContent = String(session.score);
+    }
+
+    function syncTermHighlightControls() {
+      const button = $("highlightButton");
+      const status = $("highlightStatus");
+      if (!button) return;
+      if (game.highlightMode === 0) {
+        button.textContent = "Clear highlights";
+        status.textContent = "Variable terms are yellow; constants are blue.";
+      } else {
+        button.textContent = "Highlight all terms";
+        status.textContent = "No terms highlighted.";
+      }
+    }
+
+    function refreshTermHighlights() {
+      const on = game.highlightMode === 0;
+      document.querySelector(".prompt .equation").innerHTML = Engine.toHTML(game.q.equation, on);
+      document.querySelectorAll(".workline[data-history-index]").forEach(function (lineElement) {
+        const index = Number(lineElement.getAttribute("data-history-index"));
+        const note = lineElement.querySelector(".work-note");
+        lineElement.innerHTML = Engine.toHTML(game.history[index].line, on);
+        if (note) lineElement.appendChild(note);
+      });
+      $("currentEquation").innerHTML = Engine.toHTML(game.history[game.history.length - 1].line, on);
+      syncTermHighlightControls();
+    }
+
+    function toggleTermHighlights() {
+      game.highlightMode = game.highlightMode === -1 ? 0 : -1;
+      refreshTermHighlights();
+    }
+
+    function questionHeading() {
+      const q = game.q;
+      if (q.kind === "extra") return "Similar question";
+      return "Question " + (session.state.pos + 1) + " of " + MAIN.length;
+    }
+
+    function renderSheet() {
+      const q = game.q;
+      const steps = game.path;
+      const done = game.stepIndex >= steps.length;
+      const on = game.highlightMode === 0;
+      let html = '<div class="qmeta"><h2>' + questionHeading() + (session.mode === "practice" ? '<span class="practice-tag">Practice</span>' : "") + '</h2><span class="type">' + esc(q.label) + " · " + esc(q.type) + "</span></div>";
+      html += '<p class="tip">' + (q.kind === "extra" ? "You made a mistake in the last question, so here is a similar one to practise." : "For a balance move, do the same thing to the left and right sides.") + "</p>";
+      html += '<div class="prompt"><div>Solve the equation:</div><span class="equation math">' + Engine.toHTML(q.equation, on) + '</span><div class="term-tools"><button class="highlight-btn" id="highlightButton" type="button">Highlight all terms</button><span class="highlight-status" id="highlightStatus" aria-live="polite">No terms highlighted.</span></div></div>';
+      html += '<div class="work" aria-label="Solution steps">';
+      game.history.forEach(function (entry, i) {
+        const isStart = i === 0;
+        const isLatest = i === game.history.length - 1;
+        const label = isStart ? "Start" : "Step " + entry.stepNumber;
+        const rowClass = "workrow" + (isLatest && !done ? " active" : "");
+        const markClass = "stepmark" + (isLatest && !done ? " active" : "") + (isStart || !isLatest || done ? " complete" : "");
+        html += '<div class="' + rowClass + '"><div class="' + markClass + '"><span>' + label + '</span></div><div class="workline" data-history-index="' + i + '">' + Engine.toHTML(entry.line, on) + (entry.note ? '<small class="work-note">' + esc(entry.note) + "</small>" : "") + "</div></div>";
+      });
+      if (!done) html += '<div class="workrow pending"><div class="stepmark active"><span>Step ' + (game.stepIndex + 1) + '</span></div><div class="workline">……</div></div>';
+      html += "</div>";
+      $("sheet").innerHTML = html;
+      $("currentEquation").innerHTML = Engine.toHTML(game.history[game.history.length - 1].line, on);
+      syncTermHighlightControls();
+      $("highlightButton").addEventListener("click", toggleTermHighlights);
+    }
+
+    function renderSide() {
+      const steps = game.path;
+      const done = game.stepIndex >= steps.length;
+      $("screenLabel").textContent = done ? "Equation solved" : (game.phase === "line" ? "Now write the new equation" : "Step " + (game.stepIndex + 1) + " of " + steps.length + " · choose a move");
+      $("feedback").textContent = game.feedback;
+      $("feedback").className = "feedback " + game.feedbackType;
+      const choices = $("choices");
+      if (done) {
+        let box;
+        if (game.saveError) {
+          box = '<div class="complete-box" style="border-color:var(--red)"><b style="color:var(--red)">Not saved yet</b><span>' + esc(game.saveError) + '</span><br><button class="btn" id="retrySaveButton" type="button">Try saving again</button></div>';
+        } else {
+          box = '<div class="complete-box"><b>Balanced and solved!</b><span>' + (game.saving ? "Saving your answer…" : "Next question loading…") + "</span></div>";
+        }
+        choices.innerHTML = box;
+        if ($("retrySaveButton")) $("retrySaveButton").addEventListener("click", saveResult);
+        $("hintButton").hidden = true;
+        $("hintBox").hidden = true;
+        return;
+      }
+      $("hintButton").hidden = false;
+      $("hintButton").textContent = game.hintOpen ? "Hide hint" : "Show a hint";
+      const step = steps[game.stepIndex];
+      if (game.phase === "move") {
+        const validMoves = [step.move];
+        if (step.alternative && game.stepIndex === 0 && game.path === game.q.steps) validMoves.push(step.alternative.move);
+        if (!game.moveOptions || game.moveOptionsFor !== game.stepIndex) {
+          game.moveOptions = shuffled(validMoves.concat(step.wrongMoves));
+          game.moveOptionsFor = game.stepIndex;
+        }
+        const options = game.moveOptions;
+        choices.innerHTML = '<p class="typehelp">Choose the move you will make:</p>' + options.map(function (move, i) {
+          return '<button class="choice move-choice" type="button" data-move="' + i + '"><span class="letter" aria-hidden="true">' + String.fromCharCode(65 + i) + "</span>" + esc(move) + "</button>";
+        }).join("");
+        choices.querySelectorAll(".move-choice").forEach(function (button, i) {
+          button.addEventListener("click", function () { chooseMove(options[i]); });
+        });
+      } else {
+        let trace;
+        if (step.kind === "balance") {
+          trace = '<div class="move-trace"><p class="move-caption">Do the same move to each side: <b>' + esc(game.selectedMove) + '</b></p><div class="move-side"><small>Left side</small><b>' + esc(step.symbol) + '</b></div><div class="move-side"><small>Right side</small><b>' + esc(step.symbol) + "</b></div></div>";
+        } else {
+          trace = '<div class="move-trace simplify"><div class="move-side"><small>Equivalent simplification</small><b>' + esc(game.selectedMove) + "</b></div></div>";
+        }
+        const v = game.q.variable;
+        choices.innerHTML = trace + '<form class="answerform" id="answerForm"><label for="equationAnswer">Type the new equation after this move</label><input id="equationAnswer" name="equationAnswer" type="text" inputmode="none" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="e.g. 3' + v + ' = 15" required><div class="keypad" role="group" aria-label="Math keypad">' +
+          '<button class="padkey" type="button" data-value="7">7</button><button class="padkey" type="button" data-value="8">8</button><button class="padkey" type="button" data-value="9">9</button><button class="padkey op" type="button" data-value="−" aria-label="minus">−</button><button class="padkey op" type="button" data-value="(" aria-label="open bracket">(</button><button class="padkey op" type="button" data-value=")" aria-label="close bracket">)</button>' +
+          '<button class="padkey" type="button" data-value="4">4</button><button class="padkey" type="button" data-value="5">5</button><button class="padkey" type="button" data-value="6">6</button><button class="padkey op" type="button" data-value="+" aria-label="plus">+</button><button class="padkey op" type="button" data-value="÷" aria-label="divide">÷</button><button class="padkey op" type="button" data-value="×" aria-label="multiply">×</button>' +
+          '<button class="padkey" type="button" data-value="1">1</button><button class="padkey" type="button" data-value="2">2</button><button class="padkey" type="button" data-value="3">3</button><button class="padkey op" type="button" data-value="/" aria-label="fraction bar">/</button><button class="padkey op" type="button" data-value="=" aria-label="equals">=</button><button class="padkey variable" type="button" data-value="' + v + '" aria-label="variable ' + v + '">' + v + "</button>" +
+          '<button class="padkey" type="button" data-value="0">0</button><button class="padkey op" type="button" data-value="." aria-label="decimal point">.</button><button class="padkey op" type="button" data-value="[" aria-label="open square bracket">[</button><button class="padkey op" type="button" data-value="]" aria-label="close square bracket">]</button><button class="padkey action" type="button" data-action="backspace" aria-label="Backspace">⌫</button><button class="padkey action" type="button" data-action="clear" aria-label="Clear input">Clear</button>' +
+          '</div><button class="btn" type="submit">Check my line</button><p class="answer-help">Include both sides of the equation. Write a fraction with /, e.g. (' + v + ' + 3)/2 or −20/3.</p></form>';
+        $("answerForm").addEventListener("submit", submitEquation);
+        choices.querySelectorAll(".padkey").forEach(function (button) {
+          button.addEventListener("click", function () { pressPadKey(button); });
+        });
+      }
+      $("hintBox").hidden = !game.hintOpen;
+      $("hintBox").innerHTML = "<b>" + (step.kind === "balance" ? "Balance reminder" : "Simplify reminder") + "</b><p>" + esc(step.hint) + "</p>";
+    }
+
+    function renderGame() {
+      renderProgress();
+      renderSheet();
+      renderSide();
+    }
+
+    // ── Playing ──────────────────────────────────────────────────────
+    function noteMistake(kind, text) {
+      game.hadError = true;
+      game.tries++;
+      if (kind === "move") game.wrongMoves++; else game.wrongLines++;
+      if (game.wrongInputs.length < 12) game.wrongInputs.push("Step " + (game.stepIndex + 1) + (kind === "move" ? " move: " : " line: ") + String(text).slice(0, 60));
+      playSound("wrong");
+    }
+
+    function chooseMove(answer) {
+      const step = game.path[game.stepIndex];
+      let accepted = null;
+      if (answer === step.move) {
+        accepted = step;
+      } else if (step.alternative && game.stepIndex === 0 && answer === step.alternative.move) {
+        game.path = step.alternative.steps;
+        accepted = game.path[0];
+      }
+      if (accepted) {
+        game.phase = "line";
+        game.selectedMove = accepted.move;
+        game.feedback = accepted.kind === "balance" ? "Now do " + accepted.symbol + " to both sides, then simplify." : "Now simplify and write the equivalent equation.";
+        game.feedbackType = "note";
+        renderGame();
+        $("equationAnswer").focus();
+      } else {
+        noteMistake("move", answer);
+        game.feedback = step.kind === "balance" ? "Try again. That move does not help to find " + game.q.variable + ", or it is not done to both sides." : "Try again. Choose a correct way to simplify.";
+        game.feedbackType = "bad";
+        renderGame();
+        $("choices").classList.add("shake");
+        window.setTimeout(function () { $("choices").classList.remove("shake"); }, 340);
+      }
+    }
+
+    function pressPadKey(button) {
+      const input = $("equationAnswer");
+      if (!input) return;
+      const start = input.selectionStart == null ? input.value.length : input.selectionStart;
+      const end = input.selectionEnd == null ? start : input.selectionEnd;
+      const action = button.getAttribute("data-action");
+      if (action === "clear") { input.value = ""; input.focus(); input.setSelectionRange(0, 0); return; }
+      if (action === "backspace") {
+        if (start !== end) { input.value = input.value.slice(0, start) + input.value.slice(end); input.focus(); input.setSelectionRange(start, start); }
+        else if (start > 0) { input.value = input.value.slice(0, start - 1) + input.value.slice(end); input.focus(); input.setSelectionRange(start - 1, start - 1); }
+        else input.focus();
+        return;
+      }
+      const value = button.getAttribute("data-value") || "";
+      input.value = input.value.slice(0, start) + value + input.value.slice(end);
+      input.focus();
+      const cursor = start + value.length;
+      input.setSelectionRange(cursor, cursor);
+    }
+
+    function submitEquation(event) {
+      event.preventDefault();
+      const input = $("equationAnswer");
+      const answer = input.value.trim();
+      if (!answer) return;
+      const steps = game.path;
+      const from = game.stepIndex;
+      const previousLine = game.history[game.history.length - 1].line;
+      const result = Engine.check(answer, steps.map(function (s) { return s.line; }), from, 2, previousLine, game.q.variable);
+      if (result.ok) {
+        const acceptedStep = steps[result.index];
+        const skippedSteps = result.index - from;
+        const firstTry = game.tries === 0 && !game.hintSeen;
+        game.earned += (firstTry ? 10 : 5) * (skippedSteps + 1);
+        if (firstTry) game.firstTrySteps += skippedSteps + 1;
+        game.skipped += skippedSteps;
+        const note = skippedSteps ? "Skipped " + skippedSteps + " intermediate step" + (skippedSteps === 1 ? "" : "s") : (acceptedStep.kind === "balance" ? acceptedStep.symbol + " on both sides" : acceptedStep.move);
+        game.history.push({ line: acceptedStep.line, note: note, stepNumber: result.index + 1 });
+        game.stepIndex = result.index + 1;
+        game.phase = "move";
+        const completedMove = game.selectedMove;
+        game.selectedMove = "";
+        game.tries = 0;
+        game.hintSeen = false;
+        game.hintOpen = false;
+        game.feedback = skippedSteps ? "Correct! Accepted with " + skippedSteps + " step" + (skippedSteps === 1 ? "" : "s") + " skipped." : "Correct! " + completedMove + ".";
+        game.feedbackType = "ok";
+        playSound("correct");
+        if (game.stepIndex >= steps.length) finishQuestion();
+        renderGame();
+      } else {
+        noteMistake("line", answer);
+        game.feedback = result.message;
+        game.feedbackType = "bad";
+        $("feedback").textContent = game.feedback;
+        $("feedback").className = "feedback bad";
+        $("choices").classList.add("shake");
+        window.setTimeout(function () { $("choices").classList.remove("shake"); }, 340);
+        input.focus();
+      }
+    }
+
+    function toggleHint() {
+      if (game.stepIndex >= game.path.length) return;
+      const oldInput = $("equationAnswer");
+      const savedAnswer = oldInput ? oldInput.value : null;
+      game.hintOpen = !game.hintOpen;
+      if (game.hintOpen && !game.hintSeen) { game.hintSeen = true; game.hints++; }
+      renderGame();
+      const newInput = $("equationAnswer");
+      if (newInput && savedAnswer !== null) {
+        newInput.value = savedAnswer;
+        newInput.focus();
+        newInput.setSelectionRange(savedAnswer.length, savedAnswer.length);
+      }
+    }
+
+    function questionPoints() {
+      if (game.q.kind === "extra") return 0;
+      const pathLength = game.path.length;
+      const points = Math.round(game.earned * game.q.maxSteps / pathLength / 5) * 5;
+      return Math.max(0, Math.min(points, game.q.maxSteps * 10));
+    }
+
+    function finishQuestion() {
+      game.finished = true;
+      game.points = questionPoints();
+      game.attemptId = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+      if (session.mode === "practice") {
+        session.score += game.points;
+        advanceLocal(session.state, game.q, game.hadError);
+        scheduleNext();
+      } else {
+        saveResult();
+      }
+    }
+
+    // Practice mode keeps its own progress in the browser only.
+    function advanceLocal(state, q, hadError) {
+      if (q.kind === "extra") { state.pending = null; session.extraDone = (session.extraDone || 0) + 1; return; }
+      state.pos++;
+      if (hadError) {
+        const options = versionsOf(q.parentId).filter(function (id) { return id !== q.id; });
+        state.pending = { forId: q.id, extraId: options[Math.floor(Math.random() * options.length)] };
+      }
+    }
+
+    function saveResult() {
+      game.saving = true;
+      game.saveError = "";
+      renderSide();
+      const run = game;
+      const payload = {
+        attemptId: run.attemptId, qid: run.q.id, kind: run.q.kind, points: run.points, pathSteps: run.path.length,
+        firstTrySteps: run.firstTrySteps, wrongMoves: run.wrongMoves, wrongLines: run.wrongLines, hints: run.hints,
+        skipped: run.skipped, seconds: Math.round((Date.now() - run.startedAt) / 1000), hadError: run.hadError,
+        wrongInputs: run.wrongInputs
+      };
+      server("recordResult", payload).then(function (student) {
+        if (game !== run) return;
+        me.student = student;
+        session.state = JSON.parse(JSON.stringify(student.state));
+        session.score = student.score;
+        run.saving = false;
+        if (run.hadError && session.state.pending && run.q.kind === "main") {
+          run.feedback = "Solved! Because of the mistake, you will now do one similar question.";
+          run.feedbackType = "note";
+        }
+        renderGame();
+        scheduleNext();
+      }).catch(function (err) {
+        if (game !== run) return;
+        run.saving = false;
+        run.saveError = "Check your internet connection. (" + err.message + ")";
+        renderSide();
+      });
+    }
+
+    function scheduleNext() {
+      const run = game;
+      window.setTimeout(function () {
+        if (game !== run) return;
+        beginQuestion();
+      }, game.hadError && game.q.kind === "main" ? 1700 : 1050);
+    }
+
+    function showFinish() {
+      playSound("complete");
+      const finishedGame = game;
+      if (!finishedGame) { renderIntro(); return; }
+      game.stepIndex = game.path.length;
+      setView("game");
+      renderProgress();
+      renderSheet();
+      $("choices").innerHTML = '<div class="complete-box"><b>All questions complete!</b><span>Your final solved equation is still shown here.</span></div>';
+      $("hintButton").hidden = true;
+      $("hintBox").hidden = true;
+      $("feedback").textContent = "";
+      const practice = session.mode === "practice";
+      $("finalScore").textContent = String(session.score);
+      $("finalDone").textContent = MAIN.length + " / " + MAIN.length;
+      $("finalExtra").textContent = String(practice ? session.extraDone || 0 : me.student.extraDone);
+      $("finalRank").textContent = "…";
+      $("finishMessage").textContent = practice ? "Practice complete! Practice scores are not recorded." : "You completed all 28 questions. Your teacher can see your results.";
+      $("finishView").hidden = false;
+      if (practice) { $("finalRank").textContent = "–"; return; }
+      server("getLeaderboard").then(function (board) {
+        $("finalRank").textContent = board.me && board.me.classRank ? "#" + board.me.classRank : "–";
+      }).catch(function () { $("finalRank").textContent = "–"; });
+    }
+
+    // ── Leaderboard ──────────────────────────────────────────────────
+    function boardTable(rows, title, subtitle, myEmail) {
+      if (!rows.length) return '<section class="card board"><h2>' + esc(title) + '</h2><p class="muted">' + esc(subtitle) + '</p><p class="empty">No scores yet. Be the first!</p></section>';
+      return '<section class="card board"><h2>' + esc(title) + '</h2><p class="muted">' + esc(subtitle) + '</p><table><thead><tr><th>#</th><th>Name</th><th>Class</th><th class="num">Done</th><th class="num">Points</th></tr></thead><tbody>' +
+        rows.map(function (r) {
+          return '<tr class="' + (r.isMe ? "me" : "") + '"><td><span class="rank' + (r.rank <= 3 ? " r" + r.rank : "") + '">' + r.rank + '</span></td><td>' + esc(r.name) + '</td><td>' + esc(r.cls) + " (" + esc(r.classNo) + ')</td><td class="num">' + r.done + '</td><td class="num"><b>' + r.score + "</b></td></tr>";
+        }).join("") + "</tbody></table></section>";
+    }
+
+    function showBoard() {
+      setView("board");
+      $("boardContent").className = "loading";
+      $("boardContent").textContent = "Loading…";
+      server("getLeaderboard").then(function (board) {
+        let html = '<div class="boards">' +
+          boardTable(board.classTop, "Class " + board.cls + " · Top 10", "Ranked by points, then by who reached the score first.") +
+          boardTable(board.formTop, "Form " + board.form + " · Top 20", "All classes in " + board.form + ".") + "</div>";
+        if (board.me) {
+          html += '<p class="myrank">Your rank: <b>#' + board.me.classRank + "</b> in " + esc(board.cls) + " · <b>#" + board.me.formRank + "</b> in " + esc(board.form) + " · " + board.me.score + " points</p>";
+        }
+        $("boardContent").className = "";
+        $("boardContent").innerHTML = html;
+      }).catch(function (err) {
+        $("boardContent").className = "loading";
+        $("boardContent").textContent = "Could not load the leaderboard: " + err.message;
+      });
+    }
+
+    // ── Start up ─────────────────────────────────────────────────────
+    $("hintButton").addEventListener("click", toggleHint);
+    $("soundButton").addEventListener("click", function () { sound.enabled = !sound.enabled; syncSoundButton(); });
+    $("homeButton").addEventListener("click", function () { game = null; renderIntro(); });
+    $("boardButton").addEventListener("click", showBoard);
+    $("finishBoardButton").addEventListener("click", showBoard);
+    $("practiceButton").addEventListener("click", startPractice);
+    $("boardBackButton").addEventListener("click", function () {
+      if (lastView === "game" && game) { setView("game"); if (game.finished && session.state.pos >= MAIN.length && !session.state.pending) showFinish(); else renderGame(); }
+      else renderIntro();
+    });
+
+    server("getBootstrap").then(function (data) {
+      me = data;
+      renderIntro();
+    }).catch(function (err) {
+      showError(err.message);
+    });
+  </script>
+</body>
+</html>

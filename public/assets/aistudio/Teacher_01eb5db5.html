@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Balance Quest — Teacher dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=STIX+Two+Text:ital,wght@0,400;0,600;1,400;1,600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      color-scheme: light;
+      --paper: #FBFDFF; --grid: #DFEAF6; --ink: #1B2A6B; --soft: #56639A; --line: #C3D0EA;
+      --yellow: #FFE45C; --yellow-ink: #1B2A6B; --red: #D23232; --green: #14905A; --panel: #EEF3FB; --amber: #C97A00;
+      --ui: 'Bricolage Grotesque', 'Segoe UI', system-ui, sans-serif;
+      --math: 'STIX Two Text', 'Cambria Math', Cambria, 'Times New Roman', serif;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root { color-scheme: dark; --paper: #0F1730; --grid: #1A2647; --ink: #E4EAFF; --soft: #A3AFD8; --line: #2C3A6A;
+        --yellow: #E9CF3A; --yellow-ink: #14204F; --red: #FF7070; --green: #3DD598; --panel: #141E3D; --amber: #F2B441; }
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      min-height: 100vh; margin: 0; color: var(--ink); font: 15px/1.45 var(--ui); background-color: var(--paper);
+      background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+      background-size: 26px 26px;
+    }
+    button, select, input { color: inherit; font: inherit; }
+    [hidden] { display: none !important; }
+    .wrap { width: min(1280px, 100%); margin: 0 auto; padding: 16px 18px 42px; }
+    .top { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; padding: 6px 0 14px; margin-bottom: 18px; border-bottom: 2px solid var(--ink); }
+    .brand { margin: 0; font-size: 1.35rem; font-weight: 800; letter-spacing: -.03em; }
+    .brand span { font: italic 600 1.1em var(--math); }
+    .brand small { display: block; color: var(--soft); font: 700 .72rem var(--ui); letter-spacing: .06em; text-transform: uppercase; }
+    .spacer { flex: 1; }
+    .linkbtn { padding: 4px; border: 0; background: none; color: var(--soft); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+    .btn { padding: 8px 16px; border: 2px solid var(--ink); border-radius: 10px; background: var(--ink); color: var(--paper); font-weight: 800; cursor: pointer; }
+    .btn.ghost { background: var(--paper); color: var(--ink); }
+    .btn.danger { border-color: var(--red); background: var(--paper); color: var(--red); }
+    .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 14px; }
+    .controls select, .controls input { min-height: 40px; padding: 6px 10px; border: 2px solid var(--line); border-radius: 9px; background: var(--paper); }
+    .tabs { display: flex; gap: 6px; }
+    .tab { padding: 7px 14px; border: 2px solid var(--ink); border-radius: 9px; background: var(--paper); font-weight: 800; cursor: pointer; }
+    .tab[aria-selected="true"] { background: var(--yellow); color: var(--yellow-ink); }
+    .tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
+    .tile { padding: 10px 14px; border: 2px solid var(--ink); border-radius: 12px; background: var(--paper); }
+    .tile b { display: block; font-size: 1.5rem; font-variant-numeric: tabular-nums; }
+    .tile span { color: var(--soft); font-size: .82rem; }
+    .panel { overflow-x: auto; border: 2px solid var(--ink); border-radius: 14px; background: var(--paper); }
+    table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+    th { position: sticky; top: 0; padding: 8px 10px; border-bottom: 2px solid var(--ink); background: var(--panel); color: var(--soft); font-size: .74rem; text-align: left; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; cursor: pointer; }
+    td { padding: 8px 10px; border-bottom: 1px dashed var(--line); vertical-align: middle; }
+    td.num, th.num { text-align: right; }
+    tbody tr.clickable { cursor: pointer; }
+    tbody tr.clickable:hover td { background: var(--panel); }
+    tbody tr.selected td { background: var(--yellow); color: var(--yellow-ink); }
+    .bar { display: inline-block; width: 90px; height: 10px; margin-right: 8px; overflow: hidden; vertical-align: middle; border: 1.5px solid var(--ink); border-radius: 6px; }
+    .bar span { display: block; height: 100%; background: var(--green); }
+    .status { padding: 2px 8px; border-radius: 6px; font-size: .78rem; font-weight: 800; white-space: nowrap; }
+    .status.done { background: var(--green); color: var(--paper); }
+    .status.prog { background: var(--panel); border: 1px solid var(--line); }
+    .status.new { color: var(--soft); border: 1px dashed var(--line); }
+    .math { font-family: var(--math); font-size: 1.08rem; white-space: nowrap; }
+    .frac { display: inline-flex; flex-direction: column; vertical-align: middle; margin: 0 .1em; text-align: center; font-size: .82em; line-height: 1.08; }
+    .frac .nu { padding: 0 .18em .05em; border-bottom: .08em solid currentColor; }
+    .frac .de { padding: .05em .18em 0; }
+    .detail { margin-top: 16px; padding: 16px 18px; border: 2px solid var(--ink); border-radius: 14px; background: var(--paper); }
+    .detail h2 { margin: 0; font-size: 1.2rem; }
+    .detail-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-bottom: 12px; }
+    .muted { color: var(--soft); }
+    .wrongs { max-width: 420px; color: var(--soft); font-size: .82rem; }
+    .heat { display: inline-block; min-width: 48px; padding: 2px 6px; border-radius: 6px; font-weight: 800; text-align: right; }
+    .pill { padding: 2px 8px; border: 1.5px solid var(--line); border-radius: 7px; background: var(--panel); font-size: .8rem; font-weight: 700; }
+    .loading { padding: 60px 0; color: var(--soft); text-align: center; }
+    .boards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+    .boards h3 { margin: 12px 14px 0; }
+    .note { margin: 10px 0 0; color: var(--soft); font-size: .84rem; }
+    @media (max-width: 900px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } .boards { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header class="top">
+      <h1 class="brand">Balance <span>Quest</span><small>Teacher dashboard · S1 Linear equations</small></h1>
+      <span class="spacer"></span>
+      <a class="linkbtn" id="studentLink" href="#" target="_top">Student page</a>
+      <a class="linkbtn" id="sheetLink" href="#" target="_blank" rel="noopener">Open Google Sheet</a>
+      <button class="btn ghost" id="refreshButton" type="button">Refresh</button>
+    </header>
+    <div id="loading" class="loading">Loading student progress…</div>
+    <div id="app" hidden>
+      <div class="controls">
+        <div class="tabs" role="tablist">
+          <button class="tab" role="tab" data-tab="students" aria-selected="true">Students</button>
+          <button class="tab" role="tab" data-tab="questions" aria-selected="false">Questions</button>
+          <button class="tab" role="tab" data-tab="board" aria-selected="false">Leaderboard</button>
+        </div>
+        <span class="spacer"></span>
+        <label>Class <select id="classFilter"></select></label>
+        <input id="search" type="search" placeholder="Search name or email">
+      </div>
+      <section id="tab-students"></section>
+      <section id="tab-questions" hidden></section>
+      <section id="tab-board" hidden></section>
+    </div>
+  </main>
+
+  <?!= include('Engine'); ?>
+  <script>
+    const BANK = <?!= bankJson ?>;
+    const APP = <?!= appJson ?>;
+    const $ = function (id) { return document.getElementById(id); };
+    const TOTAL = BANK.length;
+    let data = null;
+    let selectedEmail = null;
+    let sortKey = "class";
+    let sortDir = 1;
+    let activeTab = "students";
+
+    function server(name) {
+      const args = Array.prototype.slice.call(arguments, 1);
+      return new Promise(function (resolve, reject) {
+        google.script.run.withSuccessHandler(resolve).withFailureHandler(function (e) { reject(e && e.message ? e : new Error(String(e))); })[name].apply(null, args);
+      });
+    }
+    function esc(t) { return String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+    function eqHTML(text) { return '<span class="math">' + Engine.toHTML(String(text).replace(/^'/, ""), false) + "</span>"; }
+    function label(item) { return "Example " + item.example + (item.part ? " (" + item.part + ")" : ""); }
+    function mins(sec) { if (!sec) return "–"; const m = Math.floor(sec / 60), s = sec % 60; return m ? m + "m " + s + "s" : s + "s"; }
+
+    function filteredStudents() {
+      const cls = $("classFilter").value;
+      const q = $("search").value.trim().toLowerCase();
+      return data.students.filter(function (s) {
+        return (!cls || s.cls === cls) && (!q || String(s.name).toLowerCase().indexOf(q) >= 0 || String(s.email).indexOf(q) >= 0);
+      });
+    }
+
+    function sortStudents(list) {
+      const keyFns = {
+        class: function (s) { return s.cls + String(s.classNo).padStart(3, "0"); }, name: function (s) { return String(s.name).toLowerCase(); },
+        progress: function (s) { return s.done; }, score: function (s) { return s.score; }, extra: function (s) { return s.extraDone; },
+        wrong: function (s) { return s.wrong; }, hints: function (s) { return s.hints; }, active: function (s) { return s.lastActive; }
+      };
+      const f = keyFns[sortKey] || keyFns.class;
+      return list.slice().sort(function (a, b) { const x = f(a), y = f(b); return (x < y ? -1 : x > y ? 1 : 0) * sortDir; });
+    }
+
+    function renderStudents() {
+      const list = sortStudents(filteredStudents());
+      const completed = list.filter(function (s) { return s.status === "Completed"; }).length;
+      const started = list.filter(function (s) { return s.done > 0 || s.extraDone > 0; }).length;
+      const avgDone = list.length ? (list.reduce(function (a, s) { return a + s.done; }, 0) / list.length) : 0;
+      const avgScore = list.length ? Math.round(list.reduce(function (a, s) { return a + s.score; }, 0) / list.length) : 0;
+      let html = '<div class="tiles">' +
+        '<div class="tile"><b>' + list.length + '</b><span>Students signed up</span></div>' +
+        '<div class="tile"><b>' + started + '</b><span>Started</span></div>' +
+        '<div class="tile"><b>' + completed + '</b><span>Completed all ' + TOTAL + '</span></div>' +
+        '<div class="tile"><b>' + avgDone.toFixed(1) + '</b><span>Average questions done</span></div>' +
+        '<div class="tile"><b>' + avgScore + '</b><span>Average points</span></div></div>';
+      const head = [["class", "Class / No."], ["name", "Name"], ["progress", "Progress"], ["score", "Points", "num"], ["extra", "Similar Qs", "num"], ["wrong", "Wrong attempts", "num"], ["hints", "Hints", "num"], ["", "Status"], ["", "Now on"], ["active", "Last active"]];
+      html += '<div class="panel"><table><thead><tr>' + head.map(function (h) {
+        return '<th class="' + (h[2] || "") + '"' + (h[0] ? ' data-sort="' + h[0] + '"' : "") + ">" + h[1] + (sortKey === h[0] ? (sortDir > 0 ? " ▲" : " ▼") : "") + "</th>";
+      }).join("") + "</tr></thead><tbody>";
+      if (!list.length) html += '<tr><td colspan="10" class="muted">No students yet. Share the student page link with your class.</td></tr>';
+      list.forEach(function (s) {
+        const pct = Math.round(s.done / TOTAL * 100);
+        const st = s.status === "Completed" ? "done" : (s.done || s.extraDone ? "prog" : "new");
+        html += '<tr class="clickable' + (s.email === selectedEmail ? " selected" : "") + '" data-email="' + esc(s.email) + '"><td>' + esc(s.cls) + " (" + esc(s.classNo) + ")</td><td><b>" + esc(s.name) + '</b><br><span class="muted" style="font-size:.78rem">' + esc(s.email) + '</span></td><td><span class="bar"><span style="width:' + pct + '%"></span></span>' + s.done + " / " + TOTAL + '</td><td class="num"><b>' + s.score + '</b></td><td class="num">' + s.extraDone + '</td><td class="num">' + s.wrong + '</td><td class="num">' + s.hints + '</td><td><span class="status ' + st + '">' + esc(s.status || "Not started") + "</span></td><td>" + esc(s.current || "") + "</td><td>" + esc(s.lastActive) + "</td></tr>";
+      });
+      html += "</tbody></table></div><p class=\"note\">Click a student to see every question they answered. Click a column heading to sort.</p><div id=\"detail\"></div>";
+      $("tab-students").innerHTML = html;
+      $("tab-students").querySelectorAll("th[data-sort]").forEach(function (th) {
+        th.addEventListener("click", function () {
+          const key = th.getAttribute("data-sort");
+          if (sortKey === key) sortDir = -sortDir; else { sortKey = key; sortDir = key === "class" || key === "name" ? 1 : -1; }
+          renderStudents();
+        });
+      });
+      $("tab-students").querySelectorAll("tr[data-email]").forEach(function (tr) {
+        tr.addEventListener("click", function () { selectedEmail = tr.getAttribute("data-email"); renderStudents(); });
+      });
+      if (selectedEmail) renderDetail();
+    }
+
+    function renderDetail() {
+      const s = data.students.find(function (x) { return x.email === selectedEmail; });
+      if (!s) return;
+      const rows = data.results.filter(function (r) { return r.email === s.email; });
+      let html = '<div class="detail"><div class="detail-head"><h2>' + esc(s.name) + '</h2><span class="pill">' + esc(s.cls) + " (" + esc(s.classNo) + ')</span><span class="muted">' + esc(s.email) + '</span><span class="pill">' + s.done + " / " + TOTAL + ' questions</span><span class="pill">' + s.score + ' points</span><span class="muted">First login ' + esc(s.firstLogin) + (s.completedAt ? " · Completed " + esc(s.completedAt) : "") + '</span><span class="spacer"></span><button class="btn danger" id="resetButton" type="button">Reset progress</button></div>';
+      if (!rows.length) html += '<p class="muted">No questions answered yet.</p>';
+      else {
+        html += '<div class="panel"><table><thead><tr><th>Time</th><th>Question</th><th>Equation</th><th class="num">Points</th><th class="num">Wrong moves</th><th class="num">Wrong lines</th><th class="num">Hints</th><th class="num">Time</th><th>Wrong answers entered</th></tr></thead><tbody>';
+        rows.forEach(function (r) {
+          html += "<tr><td>" + esc(r.time) + "</td><td>" + esc(r.question) + ' <span class="muted" style="font-size:.78rem">' + esc(r.version) + "</span>" + (r.type === "Similar" ? ' <span class="pill">after a mistake</span>' : "") + "</td><td>" + eqHTML(r.equation) + '</td><td class="num">' + (r.type === "Similar" ? "–" : r.points + " / " + r.max) + '</td><td class="num">' + r.wrongMoves + '</td><td class="num">' + r.wrongLines + '</td><td class="num">' + r.hints + '</td><td class="num">' + mins(r.seconds) + '</td><td class="wrongs">' + esc(r.wrongAnswers) + "</td></tr>";
+        });
+        html += "</tbody></table></div>";
+      }
+      html += "</div>";
+      $("detail").innerHTML = html;
+      $("resetButton").addEventListener("click", function () {
+        if (!window.confirm("Reset all progress for " + s.name + "? Their score and saved answers will be deleted.")) return;
+        $("resetButton").disabled = true;
+        server("resetStudent", s.email).then(load).catch(function (e) { alert(e.message); $("resetButton").disabled = false; });
+      });
+    }
+
+    function renderQuestions() {
+      const emails = {};
+      filteredStudents().forEach(function (s) { emails[s.email] = true; });
+      const rows = data.results.filter(function (r) { return emails[r.email]; });
+      let html = '<div class="panel"><table><thead><tr><th>#</th><th>Question</th><th>Original equation</th><th class="num">Students done</th><th class="num">Correct with no mistakes</th><th class="num">Avg. wrong attempts</th><th class="num">Avg. hints</th><th class="num">Avg. time</th><th class="num">Similar Qs given</th></tr></thead><tbody>';
+      BANK.forEach(function (item, i) {
+        const lab = label(item);
+        const main = rows.filter(function (r) { return r.type === "Main" && r.question === lab; });
+        const sims = rows.filter(function (r) { return r.type === "Similar" && r.question === lab; });
+        const clean = main.filter(function (r) { return r.wrongMoves + r.wrongLines === 0; }).length;
+        const pct = main.length ? Math.round(clean / main.length * 100) : null;
+        const avg = function (f) { return main.length ? main.reduce(function (a, r) { return a + f(r); }, 0) / main.length : 0; };
+        const color = pct == null ? "" : (pct >= 75 ? "var(--green)" : pct >= 50 ? "var(--amber)" : "var(--red)");
+        html += "<tr><td>" + (i + 1) + "</td><td>" + esc(lab) + '<br><span class="muted" style="font-size:.78rem">' + esc(item.type) + "</span></td><td>" + eqHTML(item.eq) + '</td><td class="num">' + main.length + '</td><td class="num">' + (pct == null ? "–" : '<span class="heat" style="color:' + color + '">' + pct + "%</span>") + '</td><td class="num">' + (main.length ? avg(function (r) { return r.wrongMoves + r.wrongLines; }).toFixed(1) : "–") + '</td><td class="num">' + (main.length ? avg(function (r) { return r.hints; }).toFixed(1) : "–") + '</td><td class="num">' + (main.length ? mins(Math.round(avg(function (r) { return r.seconds; }))) : "–") + '</td><td class="num">' + sims.length + "</td></tr>";
+      });
+      html += '</tbody></table></div><p class="note">Low percentages in “Correct with no mistakes” show the questions the class found hardest. Filter by class above.</p>';
+      $("tab-questions").innerHTML = html;
+    }
+
+    function renderBoard() {
+      const cls = $("classFilter").value || data.classes[0];
+      $("tab-board").innerHTML = '<div class="loading">Loading leaderboard…</div>';
+      server("getLeaderboard", cls).then(function (b) {
+        function table(rows, title) {
+          return '<div class="panel"><h3>' + esc(title) + '</h3><table><thead><tr><th>#</th><th>Name</th><th>Class</th><th class="num">Done</th><th class="num">Points</th></tr></thead><tbody>' +
+            (rows.length ? rows.map(function (r) { return "<tr><td>" + r.rank + "</td><td>" + esc(r.name) + "</td><td>" + esc(r.cls) + " (" + esc(r.classNo) + ')</td><td class="num">' + r.done + '</td><td class="num"><b>' + r.score + "</b></td></tr>"; }).join("") : '<tr><td colspan="5" class="muted">No scores yet.</td></tr>') +
+            "</tbody></table></div>";
+        }
+        $("tab-board").innerHTML = '<div class="boards">' + table(b.classTop, "Class " + b.cls + " · Top 10") + table(b.formTop, "Form " + b.form + " · Top 20") + '</div><p class="note">This is what students see. Choose a class above to switch.</p>';
+      }).catch(function (e) { $("tab-board").innerHTML = '<p class="muted">' + esc(e.message) + "</p>"; });
+    }
+
+    function render() {
+      ["students", "questions", "board"].forEach(function (t) {
+        $("tab-" + t).hidden = t !== activeTab;
+        document.querySelector('[data-tab="' + t + '"]').setAttribute("aria-selected", String(t === activeTab));
+      });
+      if (activeTab === "students") renderStudents();
+      else if (activeTab === "questions") renderQuestions();
+      else renderBoard();
+    }
+
+    function load() {
+      $("loading").hidden = false;
+      $("app").hidden = true;
+      server("getTeacherData").then(function (d) {
+        data = d;
+        const current = $("classFilter").value;
+        $("classFilter").innerHTML = '<option value="">All classes</option>' + d.classes.map(function (c) { return '<option' + (c === current ? " selected" : "") + ">" + esc(c) + "</option>"; }).join("");
+        $("sheetLink").href = d.sheetUrl;
+        $("studentLink").href = d.studentUrl || "#";
+        $("loading").hidden = true;
+        $("app").hidden = false;
+        render();
+      }).catch(function (e) {
+        $("loading").textContent = e.message;
+      });
+    }
+
+    document.querySelectorAll(".tab").forEach(function (b) { b.addEventListener("click", function () { activeTab = b.getAttribute("data-tab"); render(); }); });
+    $("classFilter").addEventListener("change", render);
+    $("search").addEventListener("input", function () { if (activeTab !== "board") render(); });
+    $("refreshButton").addEventListener("click", load);
+    load();
+  </script>
+</body>
+</html>
