@@ -1,9 +1,23 @@
 import { useEffect, useState } from 'react';
+import { onAuthStateChanged, type User } from 'firebase/auth';
 import { ChapterHubView } from './components/ChapterHubView';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { LeaderboardView } from './components/LeaderboardView';
 import { PlayView } from './components/PlayView';
 import { TeacherView } from './components/TeacherView';
 import { TopBar, type ActiveView } from './components/TopBar';
+import { auth } from './firebase';
+import {
+  checkIsAuthorizedTeacher,
+  loadStudentSummaryFromCloud,
+  recordAttemptToCloud,
+  saveStudentStateToCloud,
+  signInWithGoogle,
+  signOutGoogle,
+  subscribeLeaderboardFromCloud,
+  subscribeMyAttemptsFromCloud,
+  type CloudLeaderboardRow,
+} from './state/firebaseSync';
 import {
   loadAppState,
   resetStudentProgress,
@@ -15,7 +29,7 @@ import {
 } from './state/storage';
 import { soundManager } from './utils/sound';
 
-export default function App() {
+function AppShell() {
   const [state, setState] = useState<AppStorageState>(() => loadAppState());
   const [view, setView] = useState<ActiveView>('hub');
   const [previousView, setPreviousView] = useState<ActiveView>('hub');
@@ -26,6 +40,96 @@ export default function App() {
   });
   const [soundOn, setSoundOn] = useState(true);
   const [darkMode, setDarkMode] = useState(false);
+
+  const [authUser, setAuthUser] = useState<User | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [isTeacher, setIsTeacher] = useState(false);
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authError, setAuthError] = useState('');
+  const [cloudLeaderboard, setCloudLeaderboard] = useState<CloudLeaderboardRow[]>([]);
+
+  // Firebase Auth state & profile hydration
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      setAuthUser(user);
+      setAuthError('');
+      if (!user) {
+        setIsTeacher(false);
+        setCloudLeaderboard([]);
+        setAuthReady(true);
+        return;
+      }
+
+      try {
+        const [teacherFlag, cloudSummary] = await Promise.all([
+          checkIsAuthorizedTeacher(user),
+          loadStudentSummaryFromCloud(user),
+        ]);
+        setIsTeacher(teacherFlag);
+
+        if (cloudSummary) {
+          setState((prev) => {
+            const mergeIds = (a: string[], b: string[]) => Array.from(new Set([...a, ...b]));
+            const next: AppStorageState = {
+              ...prev,
+              profile: {
+                name: cloudSummary.name,
+                cls: cloudSummary.cls,
+                classNo: cloudSummary.classNo,
+                email: cloudSummary.email,
+              },
+              score: Math.max(prev.score, cloudSummary.score),
+              extraDone: Math.max(prev.extraDone, cloudSummary.extraDone),
+              wrongAttempts: Math.max(prev.wrongAttempts, cloudSummary.wrongAttempts),
+              hintsUsed: Math.max(prev.hintsUsed, cloudSummary.hintsUsed),
+              lastActive: cloudSummary.updatedAtIso || prev.lastActive,
+              sections: {
+                sec1: {
+                  ...prev.sections.sec1,
+                  completedIds: mergeIds(prev.sections.sec1.completedIds, cloudSummary.completedIdsSec1),
+                },
+                sec2: {
+                  ...prev.sections.sec2,
+                  completedIds: mergeIds(prev.sections.sec2.completedIds, cloudSummary.completedIdsSec2),
+                },
+                sec3: {
+                  ...prev.sections.sec3,
+                  completedIds: mergeIds(prev.sections.sec3.completedIds, cloudSummary.completedIdsSec3),
+                },
+              },
+            };
+            saveAppState(next);
+            return next;
+          });
+        }
+      } catch (err) {
+        setAuthError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setAuthReady(true);
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  // Subscribe to student's own cloud attempts & PII-free leaderboard once authenticated
+  useEffect(() => {
+    if (!authReady || !authUser) return;
+    const unsubAttempts = subscribeMyAttemptsFromCloud(authUser, (cloudAttempts) => {
+      setState((prev) => {
+        const seen = new Set(cloudAttempts.map((a) => a.id));
+        const localOnly = prev.results.filter((r) => !seen.has(r.id));
+        const merged = [...cloudAttempts, ...localOnly].slice(0, 300);
+        const next: AppStorageState = { ...prev, results: merged };
+        saveAppState(next);
+        return next;
+      });
+    });
+    const unsubBoard = subscribeLeaderboardFromCloud(setCloudLeaderboard);
+    return () => {
+      unsubAttempts();
+      unsubBoard();
+    };
+  }, [authReady, authUser]);
 
   // Support ?autostart=1 for automated journeys & quick preview
   useEffect(() => {
@@ -59,6 +163,26 @@ export default function App() {
     document.documentElement.classList.toggle('dark', darkMode);
   }, [darkMode]);
 
+  async function handleSignIn() {
+    setAuthBusy(true);
+    setAuthError('');
+    try {
+      await signInWithGoogle();
+    } catch (err) {
+      setAuthError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
+  async function handleSignOut() {
+    setAuthError('');
+    await signOutGoogle();
+    if (view === 'teacher') {
+      setView('hub');
+    }
+  }
+
   function navigate(target: ActiveView) {
     if (target === 'leaderboard' || target === 'teacher') {
       setPreviousView(view === 'leaderboard' || view === 'teacher' ? 'hub' : view);
@@ -68,13 +192,20 @@ export default function App() {
   }
 
   function handleSaveProfile(profile: StudentProfile) {
+    const mergedProfile: StudentProfile = authUser?.email
+      ? { ...profile, email: authUser.email.trim().toLowerCase() }
+      : profile;
+
     setState((prev) => {
       const next: AppStorageState = {
         ...prev,
-        profile,
+        profile: mergedProfile,
         lastActive: new Date().toISOString(),
       };
       saveAppState(next);
+      if (authUser) {
+        void saveStudentStateToCloud(authUser, next, mergedProfile);
+      }
       return next;
     });
   }
@@ -128,12 +259,21 @@ export default function App() {
         results: [payload.record, ...prev.results].slice(0, 300),
       };
       saveAppState(next);
+      if (authUser && next.profile) {
+        void recordAttemptToCloud(authUser, next, next.profile, payload.record);
+      }
       return next;
     });
   }
 
   function handleResetProgress() {
-    setState((prev) => resetStudentProgress(prev));
+    setState((prev) => {
+      const next = resetStudentProgress(prev);
+      if (authUser && next.profile) {
+        void saveStudentStateToCloud(authUser, next, next.profile);
+      }
+      return next;
+    });
   }
 
   function handleToggleSound() {
@@ -150,6 +290,11 @@ export default function App() {
         hasProfile={Boolean(state.profile)}
         soundOn={soundOn}
         darkMode={darkMode}
+        authUser={authUser}
+        isTeacher={isTeacher}
+        authBusy={authBusy}
+        onSignIn={handleSignIn}
+        onSignOut={handleSignOut}
         onNavigate={navigate}
         onToggleSound={handleToggleSound}
         onToggleDark={() => setDarkMode((d) => !d)}
@@ -158,6 +303,12 @@ export default function App() {
       {view === 'hub' && (
         <ChapterHubView
           state={state}
+          authUser={authUser}
+          isTeacher={isTeacher}
+          authBusy={authBusy}
+          authError={authError}
+          onSignIn={handleSignIn}
+          onSignOut={handleSignOut}
           onSaveProfile={handleSaveProfile}
           onStartPlay={handleStartPlay}
           onOpenLeaderboard={() => navigate('leaderboard')}
@@ -177,6 +328,7 @@ export default function App() {
       {view === 'leaderboard' && (
         <LeaderboardView
           state={state}
+          cloudRows={cloudLeaderboard}
           onBack={() => navigate(previousView)}
         />
       )}
@@ -184,10 +336,26 @@ export default function App() {
       {view === 'teacher' && (
         <TeacherView
           state={state}
+          authUser={authUser}
+          authReady={authReady}
+          isTeacher={isTeacher}
+          authBusy={authBusy}
+          authError={authError}
+          cloudLeaderboard={cloudLeaderboard}
+          onSignIn={handleSignIn}
+          onSignOut={handleSignOut}
           onResetProgress={handleResetProgress}
           onBack={() => navigate(previousView)}
         />
       )}
     </main>
+  );
+}
+
+export default function App() {
+  return (
+    <ErrorBoundary>
+      <AppShell />
+    </ErrorBoundary>
   );
 }

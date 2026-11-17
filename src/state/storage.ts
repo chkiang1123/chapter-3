@@ -152,7 +152,21 @@ const SEED_CLASSMATES: Array<{
   { name: 'Yip Pak Him', cls: '2D', classNo: 30, done: 18, score: 420, extraDone: 2, wrong: 4, hints: 3 },
 ];
 
-export function buildLeaderboards(state: AppStorageState, filterCls?: string): {
+export interface CloudBoardInput {
+  uid?: string;
+  name: string;
+  cls: string;
+  classNo: number;
+  done: number;
+  score: number;
+  extraDone: number;
+}
+
+export function buildLeaderboards(
+  state: AppStorageState,
+  filterCls?: string,
+  cloudRows?: CloudBoardInput[],
+): {
   classTop: LeaderboardEntry[];
   formTop: LeaderboardEntry[];
   myClassRank: number | null;
@@ -164,12 +178,31 @@ export function buildLeaderboards(state: AppStorageState, filterCls?: string): {
     state.sections.sec3.completedIds.length;
 
   const targetCls = filterCls || state.profile?.cls || '2A';
-  const combined = SEED_CLASSMATES.map((c) => ({
-    ...c,
-    isMe: false,
-  }));
+  const hasCloudData = Array.isArray(cloudRows) && cloudRows.length > 0;
+  const combined = hasCloudData
+    ? cloudRows.map((c) => ({
+        name: c.name,
+        cls: c.cls,
+        classNo: c.classNo,
+        done: c.done,
+        score: c.score,
+        extraDone: c.extraDone,
+        wrong: 0,
+        hints: 0,
+        isMe: Boolean(
+          state.profile &&
+            c.cls === state.profile.cls &&
+            c.classNo === state.profile.classNo &&
+            c.name.trim().toLowerCase() === state.profile.name.trim().toLowerCase(),
+        ),
+      }))
+    : SEED_CLASSMATES.map((c) => ({
+        ...c,
+        isMe: false,
+      }));
 
-  if (state.profile) {
+  const meAlreadyInCloud = combined.some((c) => c.isMe);
+  if (state.profile && !meAlreadyInCloud) {
     combined.push({
       name: state.profile.name,
       cls: state.profile.cls,

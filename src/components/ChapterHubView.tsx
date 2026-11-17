@@ -1,5 +1,14 @@
-import { useMemo, useState } from 'react';
-import { ChevronDown, ChevronUp, FolderPlus, Check, RotateCcw } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import type { User } from 'firebase/auth';
+import {
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Cloud,
+  FolderPlus,
+  LogIn,
+  RotateCcw,
+} from 'lucide-react';
 import {
   ALL_QUESTIONS,
   RESERVED_TOPIC_SLOTS,
@@ -20,6 +29,12 @@ import { MathExpr } from './MathExpr';
 
 interface ChapterHubViewProps {
   state: AppStorageState;
+  authUser: User | null;
+  isTeacher: boolean;
+  authBusy: boolean;
+  authError: string;
+  onSignIn: () => void;
+  onSignOut: () => void;
   onSaveProfile: (profile: StudentProfile) => void;
   onStartPlay: (config: PlaySessionConfig) => void;
   onOpenLeaderboard: () => void;
@@ -27,16 +42,33 @@ interface ChapterHubViewProps {
 
 export function ChapterHubView({
   state,
+  authUser,
+  isTeacher,
+  authBusy,
+  authError,
+  onSignIn,
+  onSignOut,
   onSaveProfile,
   onStartPlay,
   onOpenLeaderboard,
 }: ChapterHubViewProps) {
   const [editingProfile, setEditingProfile] = useState(!state.profile);
-  const [name, setName] = useState(state.profile?.name || '');
+  const [name, setName] = useState(state.profile?.name || authUser?.displayName || '');
   const [cls, setCls] = useState(state.profile?.cls || '');
   const [classNo, setClassNo] = useState(state.profile ? String(state.profile.classNo) : '');
   const [profileError, setProfileError] = useState('');
   const [expandedSection, setExpandedSection] = useState<SectionId | null>(null);
+
+  useEffect(() => {
+    if (state.profile) {
+      setName(state.profile.name);
+      setCls(state.profile.cls);
+      setClassNo(String(state.profile.classNo));
+      setEditingProfile(false);
+    } else if (authUser?.displayName && !name) {
+      setName(authUser.displayName);
+    }
+  }, [state.profile, authUser]);
 
   const totalQuestions = ALL_QUESTIONS.length;
   const totalDone =
@@ -72,11 +104,12 @@ export function ChapterHubView({
     }
     setProfileError('');
     const slug = cleanName.toLowerCase().replace(/[^a-z0-9]+/g, '.');
+    const email = authUser?.email?.trim().toLowerCase() || `${cls.toLowerCase()}.${num}.${slug}@school.edu.hk`;
     onSaveProfile({
       name: cleanName,
       cls,
       classNo: num,
-      email: `${cls.toLowerCase()}.${num}.${slug}@school.edu.hk`,
+      email,
     });
     setEditingProfile(false);
   }
@@ -161,7 +194,50 @@ export function ChapterHubView({
           </div>
 
           {/* Student Profile / Progress Card */}
-          <div className="p-5 sm:p-6 border-2 border-[var(--ink)] rounded-[14px] bg-[var(--paper)]">
+          <div className="p-5 sm:p-6 border-2 border-[var(--ink)] rounded-[14px] bg-[var(--paper)] space-y-4">
+            {/* Google Account Sync Status Banner */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-dashed border-[var(--line)]">
+              {authUser ? (
+                <>
+                  <div className="flex items-center gap-2 text-xs sm:text-sm">
+                    <Cloud className="w-4 h-4 text-[var(--green)] shrink-0" aria-hidden="true" />
+                    <span className="text-[var(--soft)]">
+                      Signed in as <b className="text-[var(--ink)]">{authUser.email}</b>
+                      {isTeacher ? ' · Teacher access enabled' : ' · Syncing to teacher'}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={onSignOut}
+                    className="text-xs font-bold underline underline-offset-2 text-[var(--soft)] hover:text-[var(--ink)] cursor-pointer"
+                  >
+                    Switch account
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div className="text-xs sm:text-sm text-[var(--soft)]">
+                    Sign in with your Google account so your progress syncs to your teacher across devices.
+                  </div>
+                  <button
+                    type="button"
+                    disabled={authBusy}
+                    onClick={onSignIn}
+                    className="bq-btn-ghost inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-extrabold whitespace-nowrap shrink-0"
+                  >
+                    <LogIn className="w-3.5 h-3.5" aria-hidden="true" />
+                    <span>{authBusy ? 'Signing in...' : 'Sign in with Google'}</span>
+                  </button>
+                </>
+              )}
+            </div>
+
+            {authError && (
+              <p className="text-xs sm:text-sm font-bold text-[var(--red)]" role="alert">
+                {authError}
+              </p>
+            )}
+
             {!state.profile || editingProfile ? (
               <form onSubmit={handleProfileSubmit} noValidate>
                 <h2 className="text-lg font-extrabold">

@@ -1,4 +1,5 @@
-import { Volume2, VolumeX } from 'lucide-react';
+import type { User } from 'firebase/auth';
+import { LogIn, LogOut, ShieldCheck, Volume2, VolumeX } from 'lucide-react';
 
 export type ActiveView = 'hub' | 'play' | 'leaderboard' | 'teacher';
 
@@ -8,6 +9,11 @@ interface TopBarProps {
   hasProfile: boolean;
   soundOn: boolean;
   darkMode: boolean;
+  authUser: User | null;
+  isTeacher: boolean;
+  authBusy: boolean;
+  onSignIn: () => void;
+  onSignOut: () => void;
   onNavigate: (view: ActiveView) => void;
   onToggleSound: () => void;
   onToggleDark: () => void;
@@ -19,10 +25,17 @@ export function TopBar({
   hasProfile,
   soundOn,
   darkMode,
+  authUser,
+  isTeacher,
+  authBusy,
+  onSignIn,
+  onSignOut,
   onNavigate,
   onToggleSound,
   onToggleDark,
 }: TopBarProps) {
+  const showTeacherNav = !authUser || isTeacher;
+
   return (
     <header className="flex flex-wrap items-center justify-between gap-y-2.5 gap-x-4 border-b-2 border-[var(--ink)] pb-3 mb-5">
       {/* Zone 1: Brand wordmark */}
@@ -37,7 +50,7 @@ export function TopBar({
       {/* Zone 2: Clean single-line text navigation links */}
       <nav
         aria-label="Primary navigation"
-        className="order-3 sm:order-2 w-full sm:w-auto flex flex-wrap items-center justify-between sm:justify-center gap-x-3 gap-y-1.5 sm:gap-6 text-xs sm:text-sm font-semibold text-[var(--soft)]"
+        className="order-3 sm:order-2 w-full sm:w-auto flex flex-wrap items-center justify-between sm:justify-center gap-x-3 gap-y-1.5 sm:gap-5 text-xs sm:text-sm font-semibold text-[var(--soft)]"
       >
         <button
           type="button"
@@ -48,7 +61,7 @@ export function TopBar({
         >
           S.2 Chapter 3
         </button>
-        {hasProfile && (
+        {(hasProfile || Boolean(authUser)) && (
           <button
             type="button"
             onClick={() => onNavigate('leaderboard')}
@@ -59,22 +72,29 @@ export function TopBar({
             Leaderboard
           </button>
         )}
-        <button
-          type="button"
-          onClick={() => onNavigate('teacher')}
-          className={`whitespace-nowrap shrink-0 cursor-pointer hover:text-[var(--ink)] transition-colors ${
-            view === 'teacher' ? 'text-[var(--ink)] underline underline-offset-4 decoration-2' : ''
-          }`}
-        >
-          Teacher View
-        </button>
+        {showTeacherNav && (
+          <button
+            type="button"
+            onClick={() => onNavigate('teacher')}
+            className={`inline-flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer hover:text-[var(--ink)] transition-colors ${
+              view === 'teacher' ? 'text-[var(--ink)] underline underline-offset-4 decoration-2' : ''
+            }`}
+          >
+            {isTeacher && <ShieldCheck className="w-3.5 h-3.5 text-[var(--green)]" aria-hidden="true" />}
+            <span>Teacher View</span>
+          </button>
+        )}
         <button
           type="button"
           onClick={onToggleSound}
           aria-pressed={soundOn}
           className="inline-flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer hover:text-[var(--ink)] transition-colors"
         >
-          {soundOn ? <Volume2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" aria-hidden="true" /> : <VolumeX className="w-3.5 h-3.5 sm:w-4 sm:h-4" aria-hidden="true" />}
+          {soundOn ? (
+            <Volume2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" aria-hidden="true" />
+          ) : (
+            <VolumeX className="w-3.5 h-3.5 sm:w-4 sm:h-4" aria-hidden="true" />
+          )}
           <span>{soundOn ? 'Sound On' : 'Sound Off'}</span>
         </button>
         <button
@@ -85,6 +105,27 @@ export function TopBar({
         >
           {darkMode ? 'Light Paper' : 'Night Ink'}
         </button>
+        {!authUser ? (
+          <button
+            type="button"
+            disabled={authBusy}
+            onClick={onSignIn}
+            className="inline-flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer text-[var(--ink)] hover:opacity-80 transition-opacity disabled:opacity-50"
+          >
+            <LogIn className="w-3.5 h-3.5" aria-hidden="true" />
+            <span>{authBusy ? 'Signing in...' : 'Google Sign In'}</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onSignOut}
+            title={`Signed in as ${authUser.email || 'Google user'} (click to sign out)`}
+            className="inline-flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer hover:text-[var(--ink)] transition-colors"
+          >
+            <LogOut className="w-3.5 h-3.5" aria-hidden="true" />
+            <span>Sign out</span>
+          </button>
+        )}
       </nav>
 
       {/* Zone 3: Score / Status */}

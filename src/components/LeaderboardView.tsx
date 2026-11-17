@@ -1,9 +1,15 @@
 import { ArrowLeft } from 'lucide-react';
 import { ALL_QUESTIONS } from '../data/curriculum';
-import { buildLeaderboards, type AppStorageState, type LeaderboardEntry } from '../state/storage';
+import {
+  buildLeaderboards,
+  type AppStorageState,
+  type CloudBoardInput,
+  type LeaderboardEntry,
+} from '../state/storage';
 
 interface LeaderboardViewProps {
   state: AppStorageState;
+  cloudRows?: CloudBoardInput[];
   onBack: () => void;
 }
 
@@ -77,9 +83,9 @@ function BoardTable({
   );
 }
 
-export function LeaderboardView({ state, onBack }: LeaderboardViewProps) {
+export function LeaderboardView({ state, cloudRows, onBack }: LeaderboardViewProps) {
   const cls = state.profile?.cls || '2A';
-  const { classTop, formTop, myClassRank, myFormRank } = buildLeaderboards(state, cls);
+  const { classTop, formTop, myClassRank, myFormRank } = buildLeaderboards(state, cls, cloudRows);
 
   return (
     <div className="space-y-6 pb-10">

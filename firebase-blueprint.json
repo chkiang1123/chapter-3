@@ -1,0 +1,276 @@
+{
+  "entities": {
+    "StudentSummary": {
+      "title": "StudentSummary",
+      "description": "Per-student Chapter 3 profile, progress summary, and completed question IDs.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the student.",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "name": {
+          "type": "string",
+          "description": "Student full name.",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "cls": {
+          "type": "string",
+          "description": "S.2 class.",
+          "enum": ["2A", "2B", "2C", "2D", "2E"]
+        },
+        "classNo": {
+          "type": "integer",
+          "description": "Student class number (1-45)."
+        },
+        "email": {
+          "type": "string",
+          "description": "Student Google account email (PII, owner or teacher only).",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9._%+\\-]+@[a-zA-Z0-9.\\-]+\\.[a-zA-Z]{2,}$"
+        },
+        "score": {
+          "type": "integer",
+          "description": "Total Chapter 3 score."
+        },
+        "doneCount": {
+          "type": "integer",
+          "description": "Number of unique main questions completed across all sections."
+        },
+        "extraDone": {
+          "type": "integer",
+          "description": "Count of remediation similar questions completed."
+        },
+        "wrongAttempts": {
+          "type": "integer",
+          "description": "Total wrong move/line attempts."
+        },
+        "hintsUsed": {
+          "type": "integer",
+          "description": "Total hints opened."
+        },
+        "completedIdsSec1": {
+          "type": "array",
+          "description": "Completed question IDs for Section 1 (max 120)."
+        },
+        "completedIdsSec2": {
+          "type": "array",
+          "description": "Completed question IDs for Section 2 (max 60)."
+        },
+        "completedIdsSec3": {
+          "type": "array",
+          "description": "Completed question IDs for Section 3 (max 80)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server last-updated timestamp."
+        }
+      },
+      "required": [
+        "uid",
+        "name",
+        "cls",
+        "classNo",
+        "email",
+        "score",
+        "doneCount",
+        "extraDone",
+        "wrongAttempts",
+        "hintsUsed",
+        "completedIdsSec1",
+        "completedIdsSec2",
+        "completedIdsSec3",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "StudentAttempt": {
+      "title": "StudentAttempt",
+      "description": "Immutable per-question attempt record written when a student finishes a question.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the student.",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "studentName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "studentCls": {
+          "type": "string",
+          "enum": ["2A", "2B", "2C", "2D", "2E"]
+        },
+        "studentClassNo": {
+          "type": "integer"
+        },
+        "sectionId": {
+          "type": "string",
+          "enum": ["sec1", "sec2", "sec3"]
+        },
+        "questionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "questionLabel": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 30
+        },
+        "type": {
+          "type": "string",
+          "enum": ["Main", "Similar"]
+        },
+        "promptEq": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "points": {
+          "type": "integer"
+        },
+        "maxPoints": {
+          "type": "integer"
+        },
+        "wrongMoves": {
+          "type": "integer"
+        },
+        "wrongLines": {
+          "type": "integer"
+        },
+        "hints": {
+          "type": "integer"
+        },
+        "skipped": {
+          "type": "integer"
+        },
+        "seconds": {
+          "type": "integer"
+        },
+        "wrongInputs": {
+          "type": "array",
+          "description": "List of wrong inputs entered during this question (max 30)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "uid",
+        "studentName",
+        "studentCls",
+        "studentClassNo",
+        "sectionId",
+        "questionId",
+        "questionLabel",
+        "type",
+        "promptEq",
+        "points",
+        "maxPoints",
+        "wrongMoves",
+        "wrongLines",
+        "hints",
+        "skipped",
+        "seconds",
+        "wrongInputs",
+        "createdAt"
+      ]
+    },
+    "LeaderboardEntry": {
+      "title": "LeaderboardEntry",
+      "description": "PII-free leaderboard summary for class and form rankings.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "cls": {
+          "type": "string",
+          "enum": ["2A", "2B", "2C", "2D", "2E"]
+        },
+        "classNo": {
+          "type": "integer"
+        },
+        "doneCount": {
+          "type": "integer"
+        },
+        "score": {
+          "type": "integer"
+        },
+        "extraDone": {
+          "type": "integer"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "name", "cls", "classNo", "doneCount", "score", "extraDone", "updatedAt"]
+    },
+    "TeacherAllowlistEntry": {
+      "title": "TeacherAllowlistEntry",
+      "description": "Authorized teacher Google account email allowed to access Teacher View and all student records.",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9._%+\\-]+@[a-zA-Z0-9.\\-]+\\.[a-zA-Z]{2,}$"
+        },
+        "addedBy": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9._%+\\-]+@[a-zA-Z0-9.\\-]+\\.[a-zA-Z]{2,}$"
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["email", "addedBy", "note", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/students/{studentUid}": {
+      "schema": { "$ref": "#/entities/StudentSummary" },
+      "description": "Student progress summaries and PII (email). Readable/writable by owner; readable/manageable by authorized teachers."
+    },
+    "/students/{studentUid}/attempts/{attemptId}": {
+      "schema": { "$ref": "#/entities/StudentAttempt" },
+      "description": "Append-only student question attempt logs under each student document."
+    },
+    "/leaderboard/{studentUid}": {
+      "schema": { "$ref": "#/entities/LeaderboardEntry" },
+      "description": "PII-free leaderboard entries readable by signed-in users."
+    },
+    "/teacherAllowlist/{teacherEmail}": {
+      "schema": { "$ref": "#/entities/TeacherAllowlistEntry" },
+      "description": "Lowercase Google emails granted Teacher View access, managed by authorized teachers."
+    }
+  }
+}
