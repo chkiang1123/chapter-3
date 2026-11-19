@@ -8,6 +8,7 @@
 5. **Master Gate & Immutability**: `/students/{studentUid}/attempts/{attemptId}` requires parent `/students/{studentUid}` to exist, enforces `uid == request.auth.uid == studentUid`, and prohibits client updates.
 6. **Temporal Integrity & Bounded Payloads**: All `createdAt` and `updatedAt` timestamps must equal `request.time`. All classes (`1A–1E`, `2A–2E`), section IDs (`sec1..sec3`, `s1c10_sec1..4`), strings, and arrays have strict max sizes and enum allowlists.
 7. **OAuth Token Isolation**: Google Sheets OAuth access tokens (`https://www.googleapis.com/auth/spreadsheets`) are stored strictly in memory only during active teacher sessions and never persisted to Firestore or browser storage.
+8. **Single-Account Identity Lock**: Once a signed-in student registers `/students/{studentUid}` and `/leaderboard/{studentUid}`, `name`, `cls`, `classNo`, and `email` are immutable for non-teacher updates.
 
 ## 2. "Dirty Dozen" Attack Payloads (Expected: PERMISSION_DENIED)
 1. **Unauthenticated Student Read**: Anonymous `get(/students/stu1)` without `request.auth` -> DENIED.

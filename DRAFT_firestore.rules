@@ -201,11 +201,15 @@ service cloud.firestore {
           (
             isOwner(studentUid) &&
             incoming().uid == existing().uid &&
+            incoming().name == existing().name &&
+            incoming().cls == existing().cls &&
+            incoming().classNo == existing().classNo &&
             incoming().createdAt == existing().createdAt &&
+            incoming().email.lower() == existing().email.lower() &&
             incoming().email.lower() == request.auth.token.email.lower() &&
             incoming().updatedAt == request.time &&
             incoming().diff(existing()).affectedKeys().hasOnly([
-              'name', 'cls', 'classNo', 'email', 'score', 'doneCount',
+              'score', 'doneCount',
               'extraDone', 'wrongAttempts', 'hintsUsed',
               'completedIdsSec1', 'completedIdsSec2', 'completedIdsSec3',
               'completedIdsS1C10Sec1', 'completedIdsS1C10Sec2', 'completedIdsS1C10Sec3', 'completedIdsS1C10Sec4',
@@ -249,9 +253,12 @@ service cloud.firestore {
           (
             isOwner(studentUid) &&
             incoming().uid == existing().uid &&
+            incoming().name == existing().name &&
+            incoming().cls == existing().cls &&
+            incoming().classNo == existing().classNo &&
             incoming().updatedAt == request.time &&
             incoming().diff(existing()).affectedKeys().hasOnly([
-              'name', 'cls', 'classNo', 'doneCount', 'score', 'extraDone',
+              'doneCount', 'score', 'extraDone',
               'scoreS1C10', 'scoreS2C3', 'doneCountS1C10', 'doneCountS2C3',
               'updatedAt'
             ])

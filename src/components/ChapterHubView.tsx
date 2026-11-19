@@ -6,7 +6,9 @@ import {
   ChevronUp,
   Cloud,
   FolderPlus,
+  Lock,
   LogIn,
+  LogOut,
   RotateCcw,
 } from 'lucide-react';
 import {
@@ -228,7 +230,7 @@ export function ChapterHubView({
             </div>
             {isS1 ? (
               <>
-                <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] items-center gap-2 text-lg sm:text-xl font-math">
+                <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] items-center gap-2 text-lg sm:text-xl font-math py-1.5 leading-relaxed">
                   <div>
                     <MathExpr expr="(2x^3)^4/(4x^2)" />
                   </div>
@@ -237,7 +239,7 @@ export function ChapterHubView({
                     <MathExpr expr="4x^10" />
                   </div>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] items-center gap-2 text-lg sm:text-xl font-math pt-1 border-t border-dashed border-[var(--line)]">
+                <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] items-center gap-2 text-lg sm:text-xl font-math pt-2 pb-1 leading-relaxed border-t border-dashed border-[var(--line)]">
                   <div>
                     <MathExpr expr="(e + 2)(e + 6)" />
                   </div>
@@ -249,7 +251,7 @@ export function ChapterHubView({
               </>
             ) : (
               <>
-                <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] items-center gap-2 text-lg sm:text-xl font-math">
+                <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] items-center gap-2 text-lg sm:text-xl font-math py-1.5 leading-relaxed">
                   <div>
                     <MathExpr expr="(y^2 - 6y)/(y^2 - 36)" />
                   </div>
@@ -258,7 +260,7 @@ export function ChapterHubView({
                     <MathExpr expr="y/(y + 6)" />
                   </div>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] items-center gap-2 text-lg sm:text-xl font-math pt-1 border-t border-dashed border-[var(--line)]">
+                <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] items-center gap-2 text-lg sm:text-xl font-math pt-2 pb-1 leading-relaxed border-t border-dashed border-[var(--line)]">
                   <div>
                     <MathExpr expr="(6 - 5x)/y = 7" />
                   </div>
@@ -281,21 +283,22 @@ export function ChapterHubView({
                     <Cloud className="w-4 h-4 text-[var(--green)] shrink-0" aria-hidden="true" />
                     <span className="text-[var(--soft)]">
                       Signed in as <b className="text-[var(--ink)]">{authUser.email}</b>
-                      {isTeacher ? ' · Teacher access enabled' : ' · Syncing to teacher'}
+                      {isTeacher ? ' · Teacher access enabled' : ' · 1 account linked'}
                     </span>
                   </div>
                   <button
                     type="button"
                     onClick={onSignOut}
-                    className="text-xs font-bold underline underline-offset-2 text-[var(--soft)] hover:text-[var(--ink)] cursor-pointer"
+                    className="bq-btn-ghost inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-extrabold whitespace-nowrap shrink-0"
                   >
-                    Switch account
+                    <LogOut className="w-3.5 h-3.5" aria-hidden="true" />
+                    <span>Log out</span>
                   </button>
                 </>
               ) : (
                 <>
                   <div className="text-xs sm:text-sm text-[var(--soft)]">
-                    Sign in with your Google account so your progress syncs to your teacher across devices.
+                    Sign in with your Google account so your progress syncs to your teacher across devices (1 account per login).
                   </div>
                   <button
                     type="button"
@@ -316,13 +319,19 @@ export function ChapterHubView({
               </p>
             )}
 
-            {!state.profile || editingProfile ? (
+            {!state.profile || (editingProfile && !authUser) ? (
               <form onSubmit={handleProfileSubmit} noValidate>
                 <h2 className="text-lg font-extrabold">
-                  {state.profile ? 'Edit student details' : 'Before you start'}
+                  {authUser
+                    ? 'Register your student account'
+                    : state.profile
+                      ? 'Edit student details'
+                      : 'Before you start'}
                 </h2>
                 <p className="text-sm text-[var(--soft)] mt-1">
-                  Enter your name, class (S.1 or S.2), and class number so your section progress and leaderboard rank are recorded.
+                  {authUser
+                    ? 'Enter your name, class (S.1 or S.2), and class number once. Each Google login has one linked student account.'
+                    : 'Enter your name, class (S.1 or S.2), and class number so your section progress and leaderboard rank are recorded.'}
                 </p>
                 <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 mt-4">
                   <label className="sm:col-span-2 grid gap-1 text-sm font-bold">
@@ -408,15 +417,27 @@ export function ChapterHubView({
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <div>
                     <h2 className="text-xl font-extrabold">{state.profile.name}</h2>
-                    <p className="text-sm text-[var(--soft)]">
-                      Class {state.profile.cls} · No. {state.profile.classNo} ·{' '}
-                      <button
-                        type="button"
-                        onClick={() => setEditingProfile(true)}
-                        className="underline underline-offset-2 hover:text-[var(--ink)] cursor-pointer"
-                      >
-                        Edit details
-                      </button>
+                    <p className="text-sm text-[var(--soft)] flex flex-wrap items-center gap-1.5">
+                      <span>
+                        Class {state.profile.cls} · No. {state.profile.classNo}
+                      </span>
+                      {authUser ? (
+                        <span className="inline-flex items-center gap-1 text-xs font-bold text-[var(--green)]">
+                          <Lock className="w-3 h-3" aria-hidden="true" />
+                          <span>Single account locked ({authUser.email})</span>
+                        </span>
+                      ) : (
+                        <>
+                          <span>·</span>
+                          <button
+                            type="button"
+                            onClick={() => setEditingProfile(true)}
+                            className="underline underline-offset-2 hover:text-[var(--ink)] cursor-pointer"
+                          >
+                            Edit details
+                          </button>
+                        </>
+                      )}
                     </p>
                   </div>
                   <button

@@ -10,9 +10,14 @@ export const db = cfg.firestoreDatabaseId
   ? getFirestore(app, cfg.firestoreDatabaseId)
   : getFirestore(app);
 export const auth = getAuth(app);
-export const googleProvider = new GoogleAuthProvider();
-googleProvider.addScope('https://www.googleapis.com/auth/spreadsheets');
-googleProvider.setCustomParameters({ prompt: 'select_account' });
+export const googleAuthProvider = new GoogleAuthProvider();
+googleAuthProvider.setCustomParameters({ prompt: 'select_account' });
+
+export const googleSheetsProvider = new GoogleAuthProvider();
+googleSheetsProvider.addScope('https://www.googleapis.com/auth/spreadsheets');
+googleSheetsProvider.setCustomParameters({ prompt: 'select_account' });
+
+export const googleProvider = googleAuthProvider;
 
 export enum OperationType {
   CREATE = 'create',

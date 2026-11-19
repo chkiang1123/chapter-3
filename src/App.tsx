@@ -22,10 +22,12 @@ import {
   type CloudLeaderboardRow,
 } from './state/firebaseSync';
 import {
+  clearGuestAppState,
+  createDefaultState,
   getDefaultChapterForClass,
-  loadAppState,
+  loadAppStateForUser,
   resetStudentProgress,
-  saveAppState,
+  saveAppStateForUser,
   type AppStorageState,
   type AttemptRecord,
   type PlaySessionConfig,
@@ -34,9 +36,9 @@ import {
 import { soundManager } from './utils/sound';
 
 function AppShell() {
-  const [state, setState] = useState<AppStorageState>(() => loadAppState());
+  const [state, setState] = useState<AppStorageState>(() => loadAppStateForUser(null));
   const [activeChapterId, setActiveChapterId] = useState<ChapterId>(() =>
-    getDefaultChapterForClass(loadAppState().profile?.cls),
+    getDefaultChapterForClass(loadAppStateForUser(null).profile?.cls),
   );
   const [view, setView] = useState<ActiveView>('hub');
   const [previousView, setPreviousView] = useState<ActiveView>('hub');
@@ -55,7 +57,7 @@ function AppShell() {
   const [authError, setAuthError] = useState('');
   const [cloudLeaderboard, setCloudLeaderboard] = useState<CloudLeaderboardRow[]>([]);
 
-  // Firebase Auth state & profile hydration
+  // Firebase Auth state & strict single-account UID-isolated profile hydration
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
       setAuthUser(user);
@@ -64,9 +66,13 @@ function AppShell() {
         clearSheetsAccessToken();
         setIsTeacher(false);
         setCloudLeaderboard([]);
+        setState(loadAppStateForUser(null));
         setAuthReady(true);
         return;
       }
+
+      const localUserCache = loadAppStateForUser(user.uid);
+      setState(localUserCache);
 
       try {
         const [teacherFlag, cloudSummary] = await Promise.all([
@@ -76,64 +82,74 @@ function AppShell() {
         setIsTeacher(teacherFlag);
 
         if (cloudSummary) {
-          setState((prev) => {
-            const mergeIds = (a: string[], b: string[]) => Array.from(new Set([...a, ...b]));
-            const s1Score = Math.max(prev.scoreByChapter['s1-ch10'] ?? 0, cloudSummary.scoreS1C10);
-            const s2Score = Math.max(prev.scoreByChapter['s2-ch3'] ?? 0, cloudSummary.scoreS2C3);
-            const next: AppStorageState = {
-              ...prev,
-              profile: {
-                name: cloudSummary.name,
-                cls: cloudSummary.cls,
-                classNo: cloudSummary.classNo,
-                email: cloudSummary.email,
+          const mergeIds = (a: string[], b: string[]) => Array.from(new Set([...a, ...b]));
+          const s1Score = Math.max(localUserCache.scoreByChapter['s1-ch10'] ?? 0, cloudSummary.scoreS1C10);
+          const s2Score = Math.max(localUserCache.scoreByChapter['s2-ch3'] ?? 0, cloudSummary.scoreS2C3);
+          const next: AppStorageState = {
+            ...localUserCache,
+            profile: {
+              name: cloudSummary.name,
+              cls: cloudSummary.cls,
+              classNo: cloudSummary.classNo,
+              email: cloudSummary.email || user.email || '',
+            },
+            scoreByChapter: {
+              's1-ch10': s1Score,
+              's2-ch3': s2Score,
+            },
+            score: Math.max(localUserCache.score, cloudSummary.score, s1Score + s2Score),
+            extraDone: Math.max(localUserCache.extraDone, cloudSummary.extraDone),
+            wrongAttempts: Math.max(localUserCache.wrongAttempts, cloudSummary.wrongAttempts),
+            hintsUsed: Math.max(localUserCache.hintsUsed, cloudSummary.hintsUsed),
+            lastActive: cloudSummary.updatedAtIso || localUserCache.lastActive,
+            sections: {
+              sec1: {
+                ...localUserCache.sections.sec1,
+                completedIds: mergeIds(localUserCache.sections.sec1.completedIds, cloudSummary.completedIdsSec1),
               },
-              scoreByChapter: {
-                's1-ch10': s1Score,
-                's2-ch3': s2Score,
+              sec2: {
+                ...localUserCache.sections.sec2,
+                completedIds: mergeIds(localUserCache.sections.sec2.completedIds, cloudSummary.completedIdsSec2),
               },
-              score: Math.max(prev.score, cloudSummary.score, s1Score + s2Score),
-              extraDone: Math.max(prev.extraDone, cloudSummary.extraDone),
-              wrongAttempts: Math.max(prev.wrongAttempts, cloudSummary.wrongAttempts),
-              hintsUsed: Math.max(prev.hintsUsed, cloudSummary.hintsUsed),
-              lastActive: cloudSummary.updatedAtIso || prev.lastActive,
-              sections: {
-                sec1: {
-                  ...prev.sections.sec1,
-                  completedIds: mergeIds(prev.sections.sec1.completedIds, cloudSummary.completedIdsSec1),
-                },
-                sec2: {
-                  ...prev.sections.sec2,
-                  completedIds: mergeIds(prev.sections.sec2.completedIds, cloudSummary.completedIdsSec2),
-                },
-                sec3: {
-                  ...prev.sections.sec3,
-                  completedIds: mergeIds(prev.sections.sec3.completedIds, cloudSummary.completedIdsSec3),
-                },
-                s1c10_sec1: {
-                  ...prev.sections.s1c10_sec1,
-                  completedIds: mergeIds(prev.sections.s1c10_sec1.completedIds, cloudSummary.completedIdsS1C10Sec1),
-                },
-                s1c10_sec2: {
-                  ...prev.sections.s1c10_sec2,
-                  completedIds: mergeIds(prev.sections.s1c10_sec2.completedIds, cloudSummary.completedIdsS1C10Sec2),
-                },
-                s1c10_sec3: {
-                  ...prev.sections.s1c10_sec3,
-                  completedIds: mergeIds(prev.sections.s1c10_sec3.completedIds, cloudSummary.completedIdsS1C10Sec3),
-                },
-                s1c10_sec4: {
-                  ...prev.sections.s1c10_sec4,
-                  completedIds: mergeIds(prev.sections.s1c10_sec4.completedIds, cloudSummary.completedIdsS1C10Sec4),
-                },
+              sec3: {
+                ...localUserCache.sections.sec3,
+                completedIds: mergeIds(localUserCache.sections.sec3.completedIds, cloudSummary.completedIdsSec3),
               },
-            };
-            saveAppState(next);
-            return next;
-          });
-          setActiveChapterId((prev) =>
-            cloudSummary.cls ? getDefaultChapterForClass(cloudSummary.cls) : prev,
-          );
+              s1c10_sec1: {
+                ...localUserCache.sections.s1c10_sec1,
+                completedIds: mergeIds(
+                  localUserCache.sections.s1c10_sec1.completedIds,
+                  cloudSummary.completedIdsS1C10Sec1,
+                ),
+              },
+              s1c10_sec2: {
+                ...localUserCache.sections.s1c10_sec2,
+                completedIds: mergeIds(
+                  localUserCache.sections.s1c10_sec2.completedIds,
+                  cloudSummary.completedIdsS1C10Sec2,
+                ),
+              },
+              s1c10_sec3: {
+                ...localUserCache.sections.s1c10_sec3,
+                completedIds: mergeIds(
+                  localUserCache.sections.s1c10_sec3.completedIds,
+                  cloudSummary.completedIdsS1C10Sec3,
+                ),
+              },
+              s1c10_sec4: {
+                ...localUserCache.sections.s1c10_sec4,
+                completedIds: mergeIds(
+                  localUserCache.sections.s1c10_sec4.completedIds,
+                  cloudSummary.completedIdsS1C10Sec4,
+                ),
+              },
+            },
+          };
+          saveAppStateForUser(next, user.uid);
+          setState(next);
+          if (cloudSummary.cls) {
+            setActiveChapterId(getDefaultChapterForClass(cloudSummary.cls));
+          }
         }
       } catch (err) {
         setAuthError(err instanceof Error ? err.message : String(err));
@@ -147,13 +163,14 @@ function AppShell() {
   // Subscribe to student's own cloud attempts & PII-free leaderboard once authenticated
   useEffect(() => {
     if (!authReady || !authUser) return;
+    const uid = authUser.uid;
     const unsubAttempts = subscribeMyAttemptsFromCloud(authUser, (cloudAttempts) => {
       setState((prev) => {
         const seen = new Set(cloudAttempts.map((a) => a.id));
         const localOnly = prev.results.filter((r) => !seen.has(r.id));
         const merged = [...cloudAttempts, ...localOnly].slice(0, 300);
         const next: AppStorageState = { ...prev, results: merged };
-        saveAppState(next);
+        saveAppStateForUser(next, uid);
         return next;
       });
     });
@@ -182,7 +199,7 @@ function AppShell() {
             email: '1a.1.chan.tai.man@school.edu.hk',
           },
         };
-        saveAppState(next);
+        saveAppStateForUser(next, null);
         return next;
       });
       setPlayConfig({
@@ -199,6 +216,7 @@ function AppShell() {
   }, [darkMode]);
 
   async function handleSignIn() {
+    if (authBusy) return;
     setAuthBusy(true);
     setAuthError('');
     try {
@@ -213,9 +231,11 @@ function AppShell() {
   async function handleSignOut() {
     setAuthError('');
     await signOutGoogle();
-    if (view === 'teacher') {
-      setView('hub');
-    }
+    clearGuestAppState();
+    setState(createDefaultState());
+    setIsTeacher(false);
+    setCloudLeaderboard([]);
+    setView('hub');
   }
 
   function navigate(target: ActiveView) {
@@ -227,6 +247,11 @@ function AppShell() {
   }
 
   function handleSaveProfile(profile: StudentProfile) {
+    if (authUser && state.profile) {
+      return;
+    }
+
+    const uid = authUser?.uid || null;
     const mergedProfile: StudentProfile = authUser?.email
       ? { ...profile, email: authUser.email.trim().toLowerCase() }
       : profile;
@@ -237,7 +262,7 @@ function AppShell() {
         profile: mergedProfile,
         lastActive: new Date().toISOString(),
       };
-      saveAppState(next);
+      saveAppStateForUser(next, uid);
       if (authUser) {
         void saveStudentStateToCloud(authUser, next, mergedProfile);
       }
@@ -261,6 +286,7 @@ function AppShell() {
     practiceMode: boolean;
   }) {
     if (payload.practiceMode) return;
+    const uid = authUser?.uid || null;
 
     setState((prev) => {
       const secId = payload.record.sectionId;
@@ -306,7 +332,7 @@ function AppShell() {
         },
         results: [recordWithChapter, ...prev.results].slice(0, 300),
       };
-      saveAppState(next);
+      saveAppStateForUser(next, uid);
       if (authUser && next.profile) {
         void recordAttemptToCloud(authUser, next, next.profile, recordWithChapter);
       }
@@ -315,8 +341,9 @@ function AppShell() {
   }
 
   function handleResetProgress() {
+    const uid = authUser?.uid || null;
     setState((prev) => {
-      const next = resetStudentProgress(prev);
+      const next = resetStudentProgress(prev, uid);
       if (authUser && next.profile) {
         void saveStudentStateToCloud(authUser, next, next.profile);
       }
@@ -350,6 +377,22 @@ function AppShell() {
           onToggleSound={handleToggleSound}
           onToggleDark={() => setDarkMode((d) => !d)}
         />
+
+        {authError && (
+          <div
+            role="alert"
+            className="mb-4 px-4 py-3 border-2 border-[var(--red)] rounded-[12px] bg-[var(--paper)] flex flex-wrap items-center justify-between gap-2 text-xs sm:text-sm font-bold text-[var(--red)]"
+          >
+            <span>{authError}</span>
+            <button
+              type="button"
+              onClick={() => setAuthError('')}
+              className="px-2.5 py-1 border border-[var(--red)] rounded-[7px] text-xs font-extrabold hover:bg-[var(--red)]/10 cursor-pointer"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
 
         {view === 'hub' && (
           <ChapterHubView

@@ -5,6 +5,8 @@ import {
   createDefaultState,
   getChapterProgress,
   getMistakeQuestionIds,
+  getStorageKeyForUser,
+  parseStoredAppState,
   type AttemptRecord,
 } from './storage';
 
@@ -73,5 +75,14 @@ test('getChapterProgress and buildLeaderboards separate S.1 Ch.10 and S.2 Ch.3 c
   assert.ok(s2Board.formTop.filter((r) => !r.isMe).every((r) => r.cls.startsWith('2')));
   assert.ok(s1Board.classTop.some((r) => r.isMe && r.score === 250));
   assert.ok(s2Board.formTop.some((r) => r.isMe && r.score === 90));
+});
+
+test('getStorageKeyForUser isolates signed-in users from guests and from each other', () => {
+  assert.equal(getStorageKeyForUser(null), 'balance_quest_guest_v1');
+  assert.equal(getStorageKeyForUser(''), 'balance_quest_guest_v1');
+  assert.equal(getStorageKeyForUser('uid_alice'), 'balance_quest_user_uid_alice');
+  assert.equal(getStorageKeyForUser('uid_bob'), 'balance_quest_user_uid_bob');
+  assert.notEqual(getStorageKeyForUser('uid_alice'), getStorageKeyForUser('uid_bob'));
+  assert.equal(parseStoredAppState(null).profile, null);
 });
 

@@ -7,6 +7,7 @@ import {
   FileSpreadsheet,
   Lock,
   LogIn,
+  LogOut,
   RefreshCw,
   ShieldCheck,
   Trash2,
@@ -301,7 +302,8 @@ export function TeacherView({
               onClick={onSignOut}
               className="bq-btn inline-flex items-center gap-2 px-5 py-2.5 text-sm"
             >
-              <span>Sign out &amp; switch Google account</span>
+              <LogOut className="w-4 h-4" aria-hidden="true" />
+              <span>Log out &amp; switch Google account</span>
             </button>
           )}
           <button
@@ -606,6 +608,14 @@ export function TeacherView({
           >
             <Download className="w-4 h-4" />
             <span>{selectedAttempts.length > 0 ? 'Export Student CSV' : 'Export Summary CSV'}</span>
+          </button>
+          <button
+            type="button"
+            onClick={onSignOut}
+            className="bq-btn-ghost inline-flex items-center gap-1.5 px-3.5 py-2 text-sm"
+          >
+            <LogOut className="w-4 h-4" aria-hidden="true" />
+            <span>Log out</span>
           </button>
           <button
             type="button"

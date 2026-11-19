@@ -39,5 +39,9 @@ test('rules enforce PII isolation, temporal integrity, and strict key guards', (
   // Both S.1 and S.2 classes and S.1 Ch.10 sections are supported
   assert.match(rulesText, /'1A', '1B', '1C', '1D', '1E', '2A', '2B', '2C', '2D', '2E'/);
   assert.match(rulesText, /'s1c10_sec1', 's1c10_sec2', 's1c10_sec3', 's1c10_sec4'/);
+  // Student identity fields are locked after registration for non-teacher owners
+  assert.match(rulesText, /incoming\(\)\.name == existing\(\)\.name/);
+  assert.match(rulesText, /incoming\(\)\.cls == existing\(\)\.cls/);
+  assert.match(rulesText, /incoming\(\)\.classNo == existing\(\)\.classNo/);
 });
 

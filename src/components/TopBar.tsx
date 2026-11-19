@@ -148,11 +148,11 @@ export function TopBar({
           <button
             type="button"
             onClick={onSignOut}
-            title={`Signed in as ${authUser.email || 'Google user'} (click to sign out)`}
-            className="inline-flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer hover:text-[var(--ink)] transition-colors"
+            title={`Signed in as ${authUser.email || 'Google user'} (click to log out)`}
+            className="inline-flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer text-[var(--ink)] hover:opacity-80 transition-colors"
           >
             <LogOut className="w-3.5 h-3.5" aria-hidden="true" />
-            <span>Sign out</span>
+            <span>Log out</span>
           </button>
         )}
       </nav>

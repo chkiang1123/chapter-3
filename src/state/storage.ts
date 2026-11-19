@@ -66,7 +66,13 @@ export interface AppStorageState {
   results: AttemptRecord[];
 }
 
-const STORAGE_KEY = 'balance_quest_s2_ch3_v1';
+const LEGACY_STORAGE_KEY = 'balance_quest_s2_ch3_v1';
+const GUEST_STORAGE_KEY = 'balance_quest_guest_v1';
+
+export function getStorageKeyForUser(uid?: string | null): string {
+  const cleanUid = typeof uid === 'string' ? uid.trim() : '';
+  return cleanUid ? `balance_quest_user_${cleanUid}` : GUEST_STORAGE_KEY;
+}
 
 export function emptySections(): Record<SectionId, SectionProgress> {
   return {
@@ -103,11 +109,9 @@ export function createDefaultState(): AppStorageState {
   };
 }
 
-export function loadAppState(): AppStorageState {
-  if (typeof window === 'undefined') return createDefaultState();
+export function parseStoredAppState(raw: string | null): AppStorageState {
+  if (!raw) return createDefaultState();
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return createDefaultState();
     const parsed = JSON.parse(raw) as Partial<AppStorageState>;
     const def = createDefaultState();
     const legacyS2Score = typeof parsed.score === 'number' ? parsed.score : 0;
@@ -136,21 +140,54 @@ export function loadAppState(): AppStorageState {
   }
 }
 
-export function saveAppState(state: AppStorageState): void {
+export function loadAppStateForUser(uid?: string | null): AppStorageState {
+  if (typeof window === 'undefined') return createDefaultState();
+  try {
+    const key = getStorageKeyForUser(uid);
+    const raw = window.localStorage.getItem(key);
+    if (!raw && !uid) {
+      const legacyRaw = window.localStorage.getItem(LEGACY_STORAGE_KEY);
+      if (legacyRaw) return parseStoredAppState(legacyRaw);
+    }
+    return parseStoredAppState(raw);
+  } catch {
+    return createDefaultState();
+  }
+}
+
+export function saveAppStateForUser(state: AppStorageState, uid?: string | null): void {
   if (typeof window === 'undefined') return;
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    window.localStorage.setItem(getStorageKeyForUser(uid), JSON.stringify(state));
   } catch {
     // ignore storage quota errors
   }
 }
 
-export function resetStudentProgress(state: AppStorageState): AppStorageState {
+export function clearGuestAppState(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.removeItem(GUEST_STORAGE_KEY);
+    window.localStorage.removeItem(LEGACY_STORAGE_KEY);
+  } catch {
+    // ignore storage errors
+  }
+}
+
+export function loadAppState(): AppStorageState {
+  return loadAppStateForUser(null);
+}
+
+export function saveAppState(state: AppStorageState): void {
+  saveAppStateForUser(state, null);
+}
+
+export function resetStudentProgress(state: AppStorageState, uid?: string | null): AppStorageState {
   const next: AppStorageState = {
     ...createDefaultState(),
     profile: state.profile,
   };
-  saveAppState(next);
+  saveAppStateForUser(next, uid);
   return next;
 }
 

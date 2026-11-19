@@ -16,7 +16,7 @@ import {
   writeBatch,
   type Unsubscribe,
 } from 'firebase/firestore';
-import { OperationType, auth, db, googleProvider, handleFirestoreError } from '../firebase';
+import { OperationType, auth, db, googleAuthProvider, googleSheetsProvider, handleFirestoreError } from '../firebase';
 import { getChapterIdForSection } from '../data/curriculum';
 import {
   ALL_CLASSES,
@@ -121,22 +121,30 @@ export function formatAuthError(error: unknown): string {
     const host = typeof window !== 'undefined' ? window.location.hostname : 'this domain';
     return `Google sign-in is blocked for "${host}". Add "${host}" under Firebase Console -> Authentication -> Settings -> Authorized domains.`;
   }
+  if (raw.includes('auth/operation-not-allowed')) {
+    return 'Google sign-in is not enabled yet in Firebase Console. Enable Google under Authentication -> Sign-in method.';
+  }
   if (raw.includes('auth/popup-closed-by-user')) {
     return 'Google sign-in popup was closed before completing sign-in.';
   }
+  if (raw.includes('auth/cancelled-popup-request')) {
+    return 'Another sign-in window is already open. Please finish or close it and try again.';
+  }
   if (raw.includes('auth/popup-blocked')) {
-    return 'Your browser blocked the sign-in popup. Please allow popups for this site and try again.';
+    return 'Your browser blocked the sign-in popup. Allow popups for this site (or open the app directly in a new browser tab instead of an embedded frame) and try again.';
+  }
+  if (raw.includes('auth/network-request-failed') || raw.includes('auth/internal-error')) {
+    return 'Could not complete Google sign-in due to a network or embedded-frame restriction. Allow popups/cookies or open the app URL in its own browser tab.';
+  }
+  if (raw.includes('auth/web-storage-unsupported')) {
+    return 'Browser storage/cookies are disabled. Enable cookies for Google sign-in to work.';
   }
   return raw;
 }
 
 export async function signInWithGoogle(): Promise<User> {
   try {
-    const cred = await signInWithPopup(auth, googleProvider);
-    const oauthCred = GoogleAuthProvider.credentialFromResult(cred);
-    if (oauthCred?.accessToken) {
-      cachedSheetsAccessToken = oauthCred.accessToken;
-    }
+    const cred = await signInWithPopup(auth, googleAuthProvider);
     return cred.user;
   } catch (error) {
     throw new Error(formatAuthError(error));
@@ -145,10 +153,10 @@ export async function signInWithGoogle(): Promise<User> {
 
 export async function connectGoogleSheetsScope(): Promise<string> {
   try {
-    const cred = await signInWithPopup(auth, googleProvider);
+    const cred = await signInWithPopup(auth, googleSheetsProvider);
     const oauthCred = GoogleAuthProvider.credentialFromResult(cred);
     if (!oauthCred?.accessToken) {
-      throw new Error('Google did not return a Google Sheets access token. Please try signing in again.');
+      throw new Error('Google did not return a Google Sheets access token. Please try connecting again.');
     }
     cachedSheetsAccessToken = oauthCred.accessToken;
     return oauthCred.accessToken;
@@ -258,43 +266,53 @@ function buildStudentSummaryFields(user: User, state: AppStorageState, profile: 
   const safeEmail = normalizeEmail(user.email || profile.email).slice(0, EMAIL_MAX_LENGTH);
   const safeExtraDone = clampInt(state.extraDone, 0, 2000);
 
+  const progressFields = {
+    score: safeScore,
+    scoreS1C10,
+    scoreS2C3,
+    doneCount,
+    doneCountS1C10,
+    doneCountS2C3,
+    extraDone: safeExtraDone,
+    wrongAttempts: clampInt(state.wrongAttempts, 0, 20000),
+    hintsUsed: clampInt(state.hintsUsed, 0, 20000),
+    completedIdsSec1: sec1,
+    completedIdsSec2: sec2,
+    completedIdsSec3: sec3,
+    completedIdsS1C10Sec1: s1Sec1,
+    completedIdsS1C10Sec2: s1Sec2,
+    completedIdsS1C10Sec3: s1Sec3,
+    completedIdsS1C10Sec4: s1Sec4,
+    updatedAt: serverTimestamp(),
+  };
+
+  const leaderboardProgressFields = {
+    doneCount,
+    score: safeScore,
+    scoreS1C10,
+    scoreS2C3,
+    doneCountS1C10,
+    doneCountS2C3,
+    extraDone: safeExtraDone,
+    updatedAt: serverTimestamp(),
+  };
+
   return {
-    summaryUpdate: {
+    summaryCreate: {
       name: safeName,
       cls: safeCls,
       classNo: safeClassNo,
       email: safeEmail,
-      score: safeScore,
-      scoreS1C10,
-      scoreS2C3,
-      doneCount,
-      doneCountS1C10,
-      doneCountS2C3,
-      extraDone: safeExtraDone,
-      wrongAttempts: clampInt(state.wrongAttempts, 0, 20000),
-      hintsUsed: clampInt(state.hintsUsed, 0, 20000),
-      completedIdsSec1: sec1,
-      completedIdsSec2: sec2,
-      completedIdsSec3: sec3,
-      completedIdsS1C10Sec1: s1Sec1,
-      completedIdsS1C10Sec2: s1Sec2,
-      completedIdsS1C10Sec3: s1Sec3,
-      completedIdsS1C10Sec4: s1Sec4,
-      updatedAt: serverTimestamp(),
+      ...progressFields,
     },
-    leaderboardUpdate: {
+    summaryUpdate: progressFields,
+    leaderboardCreate: {
       name: safeName,
       cls: safeCls,
       classNo: safeClassNo,
-      doneCount,
-      score: safeScore,
-      scoreS1C10,
-      scoreS2C3,
-      doneCountS1C10,
-      doneCountS2C3,
-      extraDone: safeExtraDone,
-      updatedAt: serverTimestamp(),
+      ...leaderboardProgressFields,
     },
+    leaderboardUpdate: leaderboardProgressFields,
   };
 }
 
@@ -310,7 +328,11 @@ export async function saveStudentStateToCloud(
 
   try {
     const [studentSnap, lbSnap] = await Promise.all([getDoc(studentRef), getDoc(lbRef)]);
-    const { summaryUpdate, leaderboardUpdate } = buildStudentSummaryFields(user, state, profile);
+    const { summaryCreate, summaryUpdate, leaderboardCreate, leaderboardUpdate } = buildStudentSummaryFields(
+      user,
+      state,
+      profile,
+    );
     const batch = writeBatch(db);
 
     if (studentSnap.exists()) {
@@ -318,7 +340,7 @@ export async function saveStudentStateToCloud(
     } else {
       batch.set(studentRef, {
         uid: user.uid,
-        ...summaryUpdate,
+        ...summaryCreate,
         createdAt: serverTimestamp(),
       });
     }
@@ -328,7 +350,7 @@ export async function saveStudentStateToCloud(
     } else {
       batch.set(lbRef, {
         uid: user.uid,
-        ...leaderboardUpdate,
+        ...leaderboardCreate,
       });
     }
 
@@ -353,7 +375,11 @@ export async function recordAttemptToCloud(
 
   try {
     const [studentSnap, lbSnap] = await Promise.all([getDoc(studentRef), getDoc(lbRef)]);
-    const { summaryUpdate, leaderboardUpdate } = buildStudentSummaryFields(user, state, profile);
+    const { summaryCreate, summaryUpdate, leaderboardCreate, leaderboardUpdate } = buildStudentSummaryFields(
+      user,
+      state,
+      profile,
+    );
     const batch = writeBatch(db);
 
     if (studentSnap.exists()) {
@@ -361,7 +387,7 @@ export async function recordAttemptToCloud(
     } else {
       batch.set(studentRef, {
         uid: user.uid,
-        ...summaryUpdate,
+        ...summaryCreate,
         createdAt: serverTimestamp(),
       });
     }
@@ -371,13 +397,13 @@ export async function recordAttemptToCloud(
     } else {
       batch.set(lbRef, {
         uid: user.uid,
-        ...leaderboardUpdate,
+        ...leaderboardCreate,
       });
     }
 
     batch.set(attemptRef, {
       uid: user.uid,
-      studentName: clampText(record.studentName, NAME_MAX_LENGTH, summaryUpdate.name),
+      studentName: clampText(record.studentName, NAME_MAX_LENGTH, summaryCreate.name),
       studentCls: clampClass(record.studentCls),
       studentClassNo: clampClassNo(record.studentClassNo),
       chapterId: record.chapterId || getChapterIdForSection(record.sectionId),
