@@ -1,4 +1,7 @@
-import { MAX_CLASS_NUMBER, S2_CLASSES } from './storage';
+export const S1_CLASSES = ['1A', '1B', '1C', '1D', '1E'] as const;
+export const S2_CLASSES = ['2A', '2B', '2C', '2D', '2E'] as const;
+export const ALL_CLASSES = [...S1_CLASSES, ...S2_CLASSES] as const;
+export const MAX_CLASS_NUMBER = 45;
 
 /**
  * Primary authorized teacher Google account emails (bootstrapped alongside
@@ -19,6 +22,10 @@ export const MAX_WRONG_INPUTS = 30;
 export const MAX_SEC1_DONE = 120;
 export const MAX_SEC2_DONE = 60;
 export const MAX_SEC3_DONE = 80;
+export const MAX_S1C10_SEC1_DONE = 120;
+export const MAX_S1C10_SEC2_DONE = 60;
+export const MAX_S1C10_SEC3_DONE = 80;
+export const MAX_S1C10_SEC4_DONE = 80;
 export const TEACHER_NOTE_MAX_LENGTH = 100;
 
 export const ID_PATTERN = /^[a-zA-Z0-9_\-]+$/;
@@ -51,9 +58,9 @@ export function clampInt(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, n));
 }
 
-export function clampClass(cls: string): (typeof S2_CLASSES)[number] {
-  return (S2_CLASSES as readonly string[]).includes(cls)
-    ? (cls as (typeof S2_CLASSES)[number])
+export function clampClass(cls: string): (typeof ALL_CLASSES)[number] {
+  return (ALL_CLASSES as readonly string[]).includes(cls)
+    ? (cls as (typeof ALL_CLASSES)[number])
     : '2A';
 }
 

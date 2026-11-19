@@ -59,19 +59,18 @@ export function rEq(a: BigRat, b: BigRat): boolean {
 }
 
 export function rPow(base: BigRat, exp: number): BigRat {
-  if (!Number.isInteger(exp) || Math.abs(exp) > 20) {
-    throw new Error('Exponent must be a small integer');
+  if (!Number.isInteger(exp) || Math.abs(exp) > 100) {
+    throw new Error('Exponent must be an integer within [-100, 100]');
   }
   if (exp === 0) return rat(1n, 1n);
   if (exp < 0) {
     if (base.n === 0n) throw new Error('Zero to negative power');
     return rPow(rat(base.d, base.n), -exp);
   }
-  let res = rat(1n, 1n);
-  for (let i = 0; i < exp; i++) {
-    res = rMul(res, base);
-  }
-  return res;
+  return {
+    n: base.n ** BigInt(exp),
+    d: base.d ** BigInt(exp),
+  };
 }
 
 export function parseDecimalToRat(text: string): BigRat {
@@ -746,6 +745,126 @@ function hasUncancelledConstantFactor(node: AstNode): boolean {
   return false;
 }
 
+function hasUnexpandedBracketMul(node: AstNode): boolean {
+  const n = stripGrp(node);
+  switch (n.k) {
+    case 'num':
+    case 'var':
+      return false;
+    case 'neg':
+    case 'grp':
+      return hasUnexpandedBracketMul(n.a);
+    case 'add':
+    case 'sub':
+      return hasUnexpandedBracketMul(n.a) || hasUnexpandedBracketMul(n.b);
+    case 'mul': {
+      const a = stripGrp(n.a);
+      const b = stripGrp(n.b);
+      if (a.k === 'add' || a.k === 'sub' || b.k === 'add' || b.k === 'sub') {
+        return true;
+      }
+      return hasUnexpandedBracketMul(a) || hasUnexpandedBracketMul(b);
+    }
+    case 'div':
+      return hasUnexpandedBracketMul(n.a) || hasUnexpandedBracketMul(n.b);
+    case 'pow': {
+      const base = stripGrp(n.a);
+      if (base.k === 'add' || base.k === 'sub' || base.k === 'mul') {
+        return true;
+      }
+      return hasUnexpandedBracketMul(base);
+    }
+  }
+}
+
+function hasUncombinedProductFactors(node: AstNode): boolean {
+  const varsSeen = new Set<string>();
+  let numCount = 0;
+  let duplicate = false;
+
+  const walk = (cur: AstNode) => {
+    if (duplicate) return;
+    const n = stripGrp(cur);
+    if (n.k === 'neg') {
+      walk(n.a);
+    } else if (n.k === 'mul') {
+      walk(n.a);
+      walk(n.b);
+    } else if (n.k === 'num') {
+      numCount++;
+      if (numCount > 1) duplicate = true;
+    } else if (n.k === 'var') {
+      if (varsSeen.has(n.n)) duplicate = true;
+      varsSeen.add(n.n);
+    } else if (n.k === 'pow') {
+      const base = stripGrp(n.a);
+      if (base.k === 'var') {
+        if (varsSeen.has(base.n)) duplicate = true;
+        varsSeen.add(base.n);
+      } else {
+        duplicate = true;
+      }
+    }
+  };
+
+  walk(node);
+  return duplicate;
+}
+
+function hasUncombinedTermFactors(node: AstNode): boolean {
+  const n = stripGrp(node);
+  if (n.k === 'neg') return hasUncombinedTermFactors(n.a);
+  if (n.k === 'div') {
+    return hasUncombinedProductFactors(n.a) || hasUncombinedProductFactors(n.b);
+  }
+  return hasUncombinedProductFactors(n);
+}
+
+function termDegreeInVar(node: AstNode, targetVar: string | 'any'): number {
+  const n = stripGrp(node);
+  switch (n.k) {
+    case 'num':
+      return 0;
+    case 'var':
+      return targetVar === 'any' || n.n === targetVar ? 1 : 0;
+    case 'neg':
+    case 'grp':
+      return termDegreeInVar(n.a, targetVar);
+    case 'mul':
+      return termDegreeInVar(n.a, targetVar) + termDegreeInVar(n.b, targetVar);
+    case 'div':
+      return termDegreeInVar(n.a, targetVar) - termDegreeInVar(n.b, targetVar);
+    case 'pow': {
+      const baseDeg = termDegreeInVar(n.a, targetVar);
+      if (baseDeg === 0) return 0;
+      try {
+        const expVal = evalAst(n.b, {});
+        if (expVal.d === 1n) return baseDeg * Number(expVal.n);
+      } catch {
+        // non-numeric exponent
+      }
+      return baseDeg;
+    }
+    case 'add':
+    case 'sub':
+      return Math.max(termDegreeInVar(n.a, targetVar), termDegreeInVar(n.b, targetVar));
+  }
+}
+
+function matchesOrderRule(
+  node: AstNode,
+  rule: { direction: 'asc' | 'desc'; variable: string | 'any' },
+): boolean {
+  const terms = topTerms(stripGrp(node), 1, []);
+  if (terms.length <= 1) return true;
+  const degrees = terms.map((t) => termDegreeInVar(t.node, rule.variable));
+  for (let i = 0; i < degrees.length - 1; i++) {
+    if (rule.direction === 'asc' && degrees[i] > degrees[i + 1]) return false;
+    if (rule.direction === 'desc' && degrees[i] < degrees[i + 1]) return false;
+  }
+  return true;
+}
+
 // ── Unified Step Checker ──────────────────────────────────────────────────────
 export interface CheckResult {
   ok: boolean;
@@ -785,6 +904,9 @@ export function checkStepAnswer(params: {
     let unsimplified = false;
     let needsFactor = false;
     let needsLowestTerms = false;
+    let needsExpanded = false;
+    let needsCombinedTerms = false;
+    let wrongOrderRule: { direction: 'asc' | 'desc'; variable: string | 'any' } | null = null;
 
     for (let i = lastIdx; i >= fromIndex; i--) {
       const expectedStep = steps[i];
@@ -797,6 +919,25 @@ export function checkStepAnswer(params: {
           needsFactor = true;
           continue;
         }
+      }
+
+      // Polynomial expansion & index combination checks
+      if (expectedStep.requireExpanded) {
+        if (hasUnexpandedBracketMul(studentAst)) {
+          needsExpanded = true;
+          continue;
+        }
+        const stuTerms = topTerms(stripGrp(studentAst), 1, []);
+        const expTerms = topTerms(stripGrp(expectedAst), 1, []);
+        if (stuTerms.length > expTerms.length || stuTerms.some((t) => hasUncombinedTermFactors(t.node))) {
+          needsCombinedTerms = true;
+          continue;
+        }
+      }
+
+      if (expectedStep.orderRule && !matchesOrderRule(studentAst, expectedStep.orderRule)) {
+        wrongOrderRule = expectedStep.orderRule;
+        continue;
       }
 
       // Final step must be simplified
@@ -827,6 +968,20 @@ export function checkStepAnswer(params: {
 
     if (needsFactor) {
       return { ok: false, message: 'Write the expression in factorized form as a product of factors.' };
+    }
+    if (needsExpanded) {
+      return { ok: false, message: 'Expand all brackets and simplify completely.' };
+    }
+    if (needsCombinedTerms) {
+      return { ok: false, message: 'Combine all like terms and variable powers into a single simplified polynomial.' };
+    }
+    if (wrongOrderRule) {
+      const dirLabel = wrongOrderRule.direction === 'asc' ? 'ascending' : 'descending';
+      const varLabel = wrongOrderRule.variable === 'any' ? 'the variable' : wrongOrderRule.variable;
+      return {
+        ok: false,
+        message: `Algebraically equivalent, but arrange the terms in ${dirLabel} powers of ${varLabel}.`,
+      };
     }
     if (needsLowestTerms) {
       return { ok: false, message: 'Nearly! Cancel the common numeric factor to write it in simplest form.' };

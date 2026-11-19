@@ -2,7 +2,7 @@
   "entities": {
     "StudentSummary": {
       "title": "StudentSummary",
-      "description": "Per-student Chapter 3 profile, progress summary, and completed question IDs.",
+      "description": "Per-student S.1 Chapter 10 & S.2 Chapter 3 profile, progress summary, and completed question IDs.",
       "type": "object",
       "properties": {
         "uid": {
@@ -19,8 +19,8 @@
         },
         "cls": {
           "type": "string",
-          "description": "S.2 class.",
-          "enum": ["2A", "2B", "2C", "2D", "2E"]
+          "description": "Student class (S.1 or S.2).",
+          "enum": ["1A", "1B", "1C", "1D", "1E", "2A", "2B", "2C", "2D", "2E"]
         },
         "classNo": {
           "type": "integer",
@@ -34,11 +34,11 @@
         },
         "score": {
           "type": "integer",
-          "description": "Total Chapter 3 score."
+          "description": "Total combined score across active chapters."
         },
         "doneCount": {
           "type": "integer",
-          "description": "Number of unique main questions completed across all sections."
+          "description": "Number of unique main questions completed across all active chapters."
         },
         "extraDone": {
           "type": "integer",
@@ -54,15 +54,47 @@
         },
         "completedIdsSec1": {
           "type": "array",
-          "description": "Completed question IDs for Section 1 (max 120)."
+          "description": "Completed question IDs for S.2 Ch.3 Section 1 (max 120)."
         },
         "completedIdsSec2": {
           "type": "array",
-          "description": "Completed question IDs for Section 2 (max 60)."
+          "description": "Completed question IDs for S.2 Ch.3 Section 2 (max 60)."
         },
         "completedIdsSec3": {
           "type": "array",
-          "description": "Completed question IDs for Section 3 (max 80)."
+          "description": "Completed question IDs for S.2 Ch.3 Section 3 (max 80)."
+        },
+        "completedIdsS1C10Sec1": {
+          "type": "array",
+          "description": "Completed question IDs for S.1 Ch.10 Section 1 (max 120)."
+        },
+        "completedIdsS1C10Sec2": {
+          "type": "array",
+          "description": "Completed question IDs for S.1 Ch.10 Section 2 (max 60)."
+        },
+        "completedIdsS1C10Sec3": {
+          "type": "array",
+          "description": "Completed question IDs for S.1 Ch.10 Section 3 (max 80)."
+        },
+        "completedIdsS1C10Sec4": {
+          "type": "array",
+          "description": "Completed question IDs for S.1 Ch.10 Section 4 (max 80)."
+        },
+        "scoreS1C10": {
+          "type": "integer",
+          "description": "Score earned in S.1 Chapter 10."
+        },
+        "scoreS2C3": {
+          "type": "integer",
+          "description": "Score earned in S.2 Chapter 3."
+        },
+        "doneCountS1C10": {
+          "type": "integer",
+          "description": "Completed main questions count in S.1 Chapter 10."
+        },
+        "doneCountS2C3": {
+          "type": "integer",
+          "description": "Completed main questions count in S.2 Chapter 3."
         },
         "createdAt": {
           "type": "string",
@@ -111,14 +143,18 @@
         },
         "studentCls": {
           "type": "string",
-          "enum": ["2A", "2B", "2C", "2D", "2E"]
+          "enum": ["1A", "1B", "1C", "1D", "1E", "2A", "2B", "2C", "2D", "2E"]
         },
         "studentClassNo": {
           "type": "integer"
         },
+        "chapterId": {
+          "type": "string",
+          "enum": ["s1-ch10", "s2-ch3"]
+        },
         "sectionId": {
           "type": "string",
-          "enum": ["sec1", "sec2", "sec3"]
+          "enum": ["sec1", "sec2", "sec3", "s1c10_sec1", "s1c10_sec2", "s1c10_sec3", "s1c10_sec4"]
         },
         "questionId": {
           "type": "string",
@@ -192,7 +228,7 @@
     },
     "LeaderboardEntry": {
       "title": "LeaderboardEntry",
-      "description": "PII-free leaderboard summary for class and form rankings.",
+      "description": "PII-free leaderboard summary for class and form rankings across S.1 Ch.10 and S.2 Ch.3.",
       "type": "object",
       "properties": {
         "uid": {
@@ -207,7 +243,7 @@
         },
         "cls": {
           "type": "string",
-          "enum": ["2A", "2B", "2C", "2D", "2E"]
+          "enum": ["1A", "1B", "1C", "1D", "1E", "2A", "2B", "2C", "2D", "2E"]
         },
         "classNo": {
           "type": "integer"
@@ -219,6 +255,18 @@
           "type": "integer"
         },
         "extraDone": {
+          "type": "integer"
+        },
+        "scoreS1C10": {
+          "type": "integer"
+        },
+        "scoreS2C3": {
+          "type": "integer"
+        },
+        "doneCountS1C10": {
+          "type": "integer"
+        },
+        "doneCountS2C3": {
           "type": "integer"
         },
         "updatedAt": {

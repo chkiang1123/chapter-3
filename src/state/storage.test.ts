@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { getMistakeQuestionIds, type AttemptRecord } from './storage';
+import {
+  buildLeaderboards,
+  createDefaultState,
+  getChapterProgress,
+  getMistakeQuestionIds,
+  type AttemptRecord,
+} from './storage';
 
 function makeAttempt(overrides: Partial<AttemptRecord>): AttemptRecord {
   return {
@@ -35,13 +41,37 @@ test('getMistakeQuestionIds returns empty array when no mistakes exist', () => {
   assert.deepEqual(getMistakeQuestionIds(results, ['s1_q1', 's2_q85']), []);
 });
 
-test('getMistakeQuestionIds collects unique questions with wrongMoves or wrongLines in curriculum order', () => {
+test('getMistakeQuestionIds collects unique questions with wrongMoves or wrongLines in curriculum order and filters by chapter', () => {
   const results = [
     makeAttempt({ id: '1', questionId: 's3_q105', sectionId: 'sec3', wrongMoves: 0, wrongLines: 2 }),
     makeAttempt({ id: '2', questionId: 's1_q2', wrongMoves: 0, wrongLines: 0 }),
     makeAttempt({ id: '3', questionId: 's1_q1', wrongMoves: 1, wrongLines: 0 }),
-    makeAttempt({ id: '4', questionId: 's1_q1', wrongMoves: 0, wrongLines: 1 }),
+    makeAttempt({ id: '4', questionId: 's1c10-s1-q1a', sectionId: 's1c10_sec1', wrongMoves: 1, wrongLines: 0 }),
   ];
-  const orderedIds = ['s1_q1', 's1_q2', 's2_q85', 's3_q105'];
-  assert.deepEqual(getMistakeQuestionIds(results, orderedIds), ['s1_q1', 's3_q105']);
+  assert.deepEqual(getMistakeQuestionIds(results, ['s1_q1', 's1_q2', 's3_q105'], 's2-ch3'), ['s1_q1', 's3_q105']);
+  assert.deepEqual(getMistakeQuestionIds(results, ['s1c10-s1-q1a'], 's1-ch10'), ['s1c10-s1-q1a']);
 });
+
+test('getChapterProgress and buildLeaderboards separate S.1 Ch.10 and S.2 Ch.3 cleanly', () => {
+  const st = createDefaultState();
+  st.profile = { name: 'Lee Siu Ming', cls: '1A', classNo: 5, email: 'lee@skhbbss.edu.hk' };
+  st.sections.s1c10_sec1.completedIds = ['s1c10-s1-q1a', 's1c10-s1-q1b'];
+  st.sections.sec1.completedIds = ['s1_q1'];
+  st.scoreByChapter = { 's1-ch10': 250, 's2-ch3': 90 };
+  st.score = 340;
+
+  const s1Prog = getChapterProgress(st, 's1-ch10');
+  const s2Prog = getChapterProgress(st, 's2-ch3');
+  assert.equal(s1Prog.doneCount, 2);
+  assert.equal(s1Prog.score, 250);
+  assert.equal(s2Prog.doneCount, 1);
+  assert.equal(s2Prog.score, 90);
+
+  const s1Board = buildLeaderboards(st, '1A', undefined, 's1-ch10');
+  const s2Board = buildLeaderboards(st, '2A', undefined, 's2-ch3');
+  assert.ok(s1Board.formTop.every((r) => r.cls.startsWith('1')));
+  assert.ok(s2Board.formTop.filter((r) => !r.isMe).every((r) => r.cls.startsWith('2')));
+  assert.ok(s1Board.classTop.some((r) => r.isMe && r.score === 250));
+  assert.ok(s2Board.formTop.some((r) => r.isMe && r.score === 90));
+});
+

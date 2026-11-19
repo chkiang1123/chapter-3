@@ -111,3 +111,62 @@ test('renders stacked fractions and superscript exponents cleanly', () => {
   assert.ok(html.includes('class="frac"'));
   assert.ok(html.includes('<sup class="math-sup">6</sup>'));
 });
+
+test('enforces complete expansion, index combination, and ascending/descending polynomial order when configured', () => {
+  const indexSteps = [makeStep('simplify', 'Add indices', 'a^8', { requireExpanded: true })];
+  const uncombinedMul = checkStepAnswer({
+    input: 'a^2*a^6',
+    mode: 'expression',
+    steps: indexSteps,
+    fromIndex: 0,
+    previousLine: 'a^2*a^6',
+  });
+  assert.equal(uncombinedMul.ok, false);
+
+  const combinedMul = checkStepAnswer({
+    input: 'a^8',
+    mode: 'expression',
+    steps: indexSteps,
+    fromIndex: 0,
+    previousLine: 'a^2*a^6',
+  });
+  assert.equal(combinedMul.ok, true);
+
+  const expandAscSteps = [
+    makeStep('expand', 'Expand brackets', 'e^2 + 6e + 2e + 12', { requireExpanded: true }),
+    makeStep('combine', 'Collect like terms', '12 + 8e + e^2', {
+      requireExpanded: true,
+      orderRule: { direction: 'asc', variable: 'e' },
+    }),
+  ];
+
+  // Unexpanded bracket must fail step 1 even if mathematically equivalent
+  const stillBracketed = checkStepAnswer({
+    input: '(e+2)(e+6)',
+    mode: 'expression',
+    steps: expandAscSteps,
+    fromIndex: 0,
+    previousLine: '(e+2)(e+6)',
+  });
+  assert.equal(stillBracketed.ok, false);
+
+  // Wrong descending order on step 2 must fail ascending rule
+  const wrongOrder = checkStepAnswer({
+    input: 'e^2 + 8e + 12',
+    mode: 'expression',
+    steps: expandAscSteps,
+    fromIndex: 1,
+    previousLine: 'e^2 + 6e + 2e + 12',
+  });
+  assert.equal(wrongOrder.ok, false);
+
+  const correctAsc = checkStepAnswer({
+    input: '12 + 8e + e^2',
+    mode: 'expression',
+    steps: expandAscSteps,
+    fromIndex: 1,
+    previousLine: 'e^2 + 6e + 2e + 12',
+  });
+  assert.equal(correctAsc.ok, true);
+});
+

@@ -34,6 +34,7 @@ test('email validator rejects malformed or oversized addresses', () => {
 test('payload sanitizers enforce blueprint bounds and valid IDs', () => {
   assert.equal(clampText('   ', NAME_MAX_LENGTH, 'Fallback'), 'Fallback');
   assert.equal(clampText('A'.repeat(200), NAME_MAX_LENGTH).length, NAME_MAX_LENGTH);
+  assert.equal(clampClass('1B'), '1B');
   assert.equal(clampClass('2C'), '2C');
   assert.equal(clampClass('9Z'), '2A');
   assert.equal(clampClassNo(0), 1);
@@ -42,3 +43,4 @@ test('payload sanitizers enforce blueprint bounds and valid IDs', () => {
   assert.equal(clampStringArray(Array(60).fill('y'), MAX_WRONG_INPUTS, 120).length, MAX_WRONG_INPUTS);
   assert.match(sanitizeAttemptDocId('att/123:weird!id'), /^[a-zA-Z0-9_\-]+$/);
 });
+

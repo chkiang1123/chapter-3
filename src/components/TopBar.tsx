@@ -1,10 +1,12 @@
 import type { User } from 'firebase/auth';
 import { LogIn, LogOut, ShieldCheck, Volume2, VolumeX } from 'lucide-react';
+import type { ChapterId } from '../data/types';
 
 export type ActiveView = 'hub' | 'play' | 'leaderboard' | 'teacher';
 
 interface TopBarProps {
   view: ActiveView;
+  activeChapterId: ChapterId;
   score: number;
   hasProfile: boolean;
   soundOn: boolean;
@@ -12,6 +14,7 @@ interface TopBarProps {
   authUser: User | null;
   isTeacher: boolean;
   authBusy: boolean;
+  onSelectChapter: (chapterId: ChapterId) => void;
   onSignIn: () => void;
   onSignOut: () => void;
   onNavigate: (view: ActiveView) => void;
@@ -21,6 +24,7 @@ interface TopBarProps {
 
 export function TopBar({
   view,
+  activeChapterId,
   score,
   hasProfile,
   soundOn,
@@ -28,6 +32,7 @@ export function TopBar({
   authUser,
   isTeacher,
   authBusy,
+  onSelectChapter,
   onSignIn,
   onSignOut,
   onNavigate,
@@ -38,13 +43,18 @@ export function TopBar({
 
   return (
     <header className="flex flex-wrap items-center justify-between gap-y-2.5 gap-x-4 border-b-2 border-[var(--ink)] pb-3 mb-5">
-      {/* Zone 1: Brand wordmark */}
+      {/* Zone 1: Brand wordmark + school attribution */}
       <button
         type="button"
         onClick={() => onNavigate('hub')}
-        className="order-1 text-left text-xl sm:text-2xl font-extrabold tracking-tight whitespace-nowrap shrink-0 cursor-pointer hover:opacity-85 transition-opacity"
+        className="order-1 text-left cursor-pointer hover:opacity-85 transition-opacity shrink-0"
       >
-        Balance <span className="font-math italic font-semibold">Quest</span>
+        <div className="text-xl sm:text-2xl font-extrabold tracking-tight leading-none whitespace-nowrap">
+          Balance <span className="font-math italic font-semibold">Quest</span>
+        </div>
+        <div className="text-[11px] font-bold text-[var(--soft)] mt-0.5 whitespace-nowrap">
+          S. K. H. Bishop Baker Secondary School
+        </div>
       </button>
 
       {/* Zone 2: Clean single-line text navigation links */}
@@ -54,12 +64,31 @@ export function TopBar({
       >
         <button
           type="button"
-          onClick={() => onNavigate('hub')}
+          onClick={() => {
+            onSelectChapter('s1-ch10');
+            onNavigate('hub');
+          }}
           className={`whitespace-nowrap shrink-0 cursor-pointer hover:text-[var(--ink)] transition-colors ${
-            view === 'hub' ? 'text-[var(--ink)] underline underline-offset-4 decoration-2' : ''
+            view === 'hub' && activeChapterId === 's1-ch10'
+              ? 'text-[var(--ink)] underline underline-offset-4 decoration-2'
+              : ''
           }`}
         >
-          S.2 Chapter 3
+          S.1 Ch.10
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            onSelectChapter('s2-ch3');
+            onNavigate('hub');
+          }}
+          className={`whitespace-nowrap shrink-0 cursor-pointer hover:text-[var(--ink)] transition-colors ${
+            view === 'hub' && activeChapterId === 's2-ch3'
+              ? 'text-[var(--ink)] underline underline-offset-4 decoration-2'
+              : ''
+          }`}
+        >
+          S.2 Ch.3
         </button>
         {(hasProfile || Boolean(authUser)) && (
           <button

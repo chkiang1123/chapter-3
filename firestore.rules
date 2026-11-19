@@ -51,11 +51,26 @@ service cloud.firestore {
     }
 
     function isValidClass(cls) {
-      return cls is string && cls in ['2A', '2B', '2C', '2D', '2E'];
+      return cls is string && cls in ['1A', '1B', '1C', '1D', '1E', '2A', '2B', '2C', '2D', '2E'];
+    }
+
+    function isValidChapterId(chapterId) {
+      return chapterId is string && chapterId in ['s1-ch10', 's2-ch3'];
+    }
+
+    function isValidSectionId(sectionId) {
+      return sectionId is string && sectionId in [
+        'sec1', 'sec2', 'sec3',
+        's1c10_sec1', 's1c10_sec2', 's1c10_sec3', 's1c10_sec4'
+      ];
     }
 
     function isBoundedStringList(arr, maxLen) {
       return arr is list && arr.size() <= maxLen && (arr.size() == 0 || (arr[0] is string && arr[0].size() <= 120));
+    }
+
+    function isBoundedInt(val, minVal, maxVal) {
+      return val is int && val >= minVal && val <= maxVal;
     }
 
     // --- Validation Blueprints (matched verbatim with firebase-blueprint.json) ---
@@ -70,22 +85,32 @@ service cloud.firestore {
           'uid', 'name', 'cls', 'classNo', 'email', 'score', 'doneCount',
           'extraDone', 'wrongAttempts', 'hintsUsed',
           'completedIdsSec1', 'completedIdsSec2', 'completedIdsSec3',
+          'completedIdsS1C10Sec1', 'completedIdsS1C10Sec2', 'completedIdsS1C10Sec3', 'completedIdsS1C10Sec4',
+          'scoreS1C10', 'scoreS2C3', 'doneCountS1C10', 'doneCountS2C3',
           'createdAt', 'updatedAt'
         ]) &&
         isValidId(data.uid) &&
         data.uid == studentUid &&
         data.name is string && data.name.size() >= 1 && data.name.size() <= 60 &&
         isValidClass(data.cls) &&
-        data.classNo is int && data.classNo >= 1 && data.classNo <= 45 &&
+        isBoundedInt(data.classNo, 1, 45) &&
         isValidEmail(data.email) &&
-        data.score is int && data.score >= 0 && data.score <= 100000 &&
-        data.doneCount is int && data.doneCount >= 0 && data.doneCount <= 500 &&
-        data.extraDone is int && data.extraDone >= 0 && data.extraDone <= 2000 &&
-        data.wrongAttempts is int && data.wrongAttempts >= 0 && data.wrongAttempts <= 20000 &&
-        data.hintsUsed is int && data.hintsUsed >= 0 && data.hintsUsed <= 20000 &&
+        isBoundedInt(data.score, 0, 100000) &&
+        isBoundedInt(data.doneCount, 0, 500) &&
+        isBoundedInt(data.extraDone, 0, 2000) &&
+        isBoundedInt(data.wrongAttempts, 0, 20000) &&
+        isBoundedInt(data.hintsUsed, 0, 20000) &&
         isBoundedStringList(data.completedIdsSec1, 120) &&
         isBoundedStringList(data.completedIdsSec2, 60) &&
         isBoundedStringList(data.completedIdsSec3, 80) &&
+        (!('completedIdsS1C10Sec1' in data) || isBoundedStringList(data.completedIdsS1C10Sec1, 120)) &&
+        (!('completedIdsS1C10Sec2' in data) || isBoundedStringList(data.completedIdsS1C10Sec2, 60)) &&
+        (!('completedIdsS1C10Sec3' in data) || isBoundedStringList(data.completedIdsS1C10Sec3, 80)) &&
+        (!('completedIdsS1C10Sec4' in data) || isBoundedStringList(data.completedIdsS1C10Sec4, 80)) &&
+        (!('scoreS1C10' in data) || isBoundedInt(data.scoreS1C10, 0, 100000)) &&
+        (!('scoreS2C3' in data) || isBoundedInt(data.scoreS2C3, 0, 100000)) &&
+        (!('doneCountS1C10' in data) || isBoundedInt(data.doneCountS1C10, 0, 500)) &&
+        (!('doneCountS2C3' in data) || isBoundedInt(data.doneCountS2C3, 0, 500)) &&
         data.createdAt is timestamp &&
         data.updatedAt is timestamp;
     }
@@ -97,7 +122,7 @@ service cloud.firestore {
           'wrongMoves', 'wrongLines', 'hints', 'skipped', 'seconds', 'wrongInputs', 'createdAt'
         ]) &&
         data.keys().hasOnly([
-          'uid', 'studentName', 'studentCls', 'studentClassNo', 'sectionId',
+          'uid', 'studentName', 'studentCls', 'studentClassNo', 'chapterId', 'sectionId',
           'questionId', 'questionLabel', 'type', 'promptEq', 'points', 'maxPoints',
           'wrongMoves', 'wrongLines', 'hints', 'skipped', 'seconds', 'wrongInputs', 'createdAt'
         ]) &&
@@ -105,34 +130,42 @@ service cloud.firestore {
         data.uid == studentUid &&
         data.studentName is string && data.studentName.size() >= 1 && data.studentName.size() <= 60 &&
         isValidClass(data.studentCls) &&
-        data.studentClassNo is int && data.studentClassNo >= 1 && data.studentClassNo <= 45 &&
-        data.sectionId is string && data.sectionId in ['sec1', 'sec2', 'sec3'] &&
+        isBoundedInt(data.studentClassNo, 1, 45) &&
+        (!('chapterId' in data) || isValidChapterId(data.chapterId)) &&
+        isValidSectionId(data.sectionId) &&
         data.questionId is string && data.questionId.size() >= 1 && data.questionId.size() <= 40 &&
         data.questionLabel is string && data.questionLabel.size() >= 1 && data.questionLabel.size() <= 30 &&
         data.type is string && data.type in ['Main', 'Similar'] &&
         data.promptEq is string && data.promptEq.size() >= 1 && data.promptEq.size() <= 200 &&
-        data.points is int && data.points >= 0 && data.points <= 500 &&
-        data.maxPoints is int && data.maxPoints >= 0 && data.maxPoints <= 500 &&
-        data.wrongMoves is int && data.wrongMoves >= 0 && data.wrongMoves <= 500 &&
-        data.wrongLines is int && data.wrongLines >= 0 && data.wrongLines <= 500 &&
-        data.hints is int && data.hints >= 0 && data.hints <= 500 &&
-        data.skipped is int && data.skipped >= 0 && data.skipped <= 50 &&
-        data.seconds is int && data.seconds >= 0 && data.seconds <= 86400 &&
+        isBoundedInt(data.points, 0, 500) &&
+        isBoundedInt(data.maxPoints, 0, 500) &&
+        isBoundedInt(data.wrongMoves, 0, 500) &&
+        isBoundedInt(data.wrongLines, 0, 500) &&
+        isBoundedInt(data.hints, 0, 500) &&
+        isBoundedInt(data.skipped, 0, 50) &&
+        isBoundedInt(data.seconds, 0, 86400) &&
         isBoundedStringList(data.wrongInputs, 30) &&
         data.createdAt is timestamp;
     }
 
     function isValidLeaderboardEntry(data, studentUid) {
       return data.keys().hasAll(['uid', 'name', 'cls', 'classNo', 'doneCount', 'score', 'extraDone', 'updatedAt']) &&
-        data.keys().hasOnly(['uid', 'name', 'cls', 'classNo', 'doneCount', 'score', 'extraDone', 'updatedAt']) &&
+        data.keys().hasOnly([
+          'uid', 'name', 'cls', 'classNo', 'doneCount', 'score', 'extraDone',
+          'scoreS1C10', 'scoreS2C3', 'doneCountS1C10', 'doneCountS2C3', 'updatedAt'
+        ]) &&
         isValidId(data.uid) &&
         data.uid == studentUid &&
         data.name is string && data.name.size() >= 1 && data.name.size() <= 60 &&
         isValidClass(data.cls) &&
-        data.classNo is int && data.classNo >= 1 && data.classNo <= 45 &&
-        data.doneCount is int && data.doneCount >= 0 && data.doneCount <= 500 &&
-        data.score is int && data.score >= 0 && data.score <= 100000 &&
-        data.extraDone is int && data.extraDone >= 0 && data.extraDone <= 2000 &&
+        isBoundedInt(data.classNo, 1, 45) &&
+        isBoundedInt(data.doneCount, 0, 500) &&
+        isBoundedInt(data.score, 0, 100000) &&
+        isBoundedInt(data.extraDone, 0, 2000) &&
+        (!('scoreS1C10' in data) || isBoundedInt(data.scoreS1C10, 0, 100000)) &&
+        (!('scoreS2C3' in data) || isBoundedInt(data.scoreS2C3, 0, 100000)) &&
+        (!('doneCountS1C10' in data) || isBoundedInt(data.doneCountS1C10, 0, 500)) &&
+        (!('doneCountS2C3' in data) || isBoundedInt(data.doneCountS2C3, 0, 500)) &&
         data.updatedAt is timestamp;
     }
 
@@ -175,6 +208,8 @@ service cloud.firestore {
               'name', 'cls', 'classNo', 'email', 'score', 'doneCount',
               'extraDone', 'wrongAttempts', 'hintsUsed',
               'completedIdsSec1', 'completedIdsSec2', 'completedIdsSec3',
+              'completedIdsS1C10Sec1', 'completedIdsS1C10Sec2', 'completedIdsS1C10Sec3', 'completedIdsS1C10Sec4',
+              'scoreS1C10', 'scoreS2C3', 'doneCountS1C10', 'doneCountS2C3',
               'updatedAt'
             ])
           )
@@ -200,7 +235,7 @@ service cloud.firestore {
     // 3. PII-Free Leaderboard Entries
     match /leaderboard/{studentUid} {
       allow get: if isVerifiedUser() && isValidId(studentUid);
-      allow list: if isVerifiedUser() && resource.data.cls in ['2A', '2B', '2C', '2D', '2E'];
+      allow list: if isVerifiedUser() && resource.data.cls in ['1A', '1B', '1C', '1D', '1E', '2A', '2B', '2C', '2D', '2E'];
       allow create: if isVerifiedUser() &&
         isValidId(studentUid) &&
         isOwner(studentUid) &&
@@ -216,7 +251,9 @@ service cloud.firestore {
             incoming().uid == existing().uid &&
             incoming().updatedAt == request.time &&
             incoming().diff(existing()).affectedKeys().hasOnly([
-              'name', 'cls', 'classNo', 'doneCount', 'score', 'extraDone', 'updatedAt'
+              'name', 'cls', 'classNo', 'doneCount', 'score', 'extraDone',
+              'scoreS1C10', 'scoreS2C3', 'doneCountS1C10', 'doneCountS2C3',
+              'updatedAt'
             ])
           )
         );

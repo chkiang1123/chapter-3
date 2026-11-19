@@ -1,14 +1,31 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ALL_QUESTIONS, S2_CHAPTER_3, RESERVED_TOPIC_SLOTS } from './curriculum';
+import {
+  ALL_QUESTIONS,
+  ACTIVE_CHAPTERS,
+  RESERVED_TOPIC_SLOTS,
+  S1_CHAPTER_10,
+  S1_CH10_QUESTIONS,
+  S2_CHAPTER_3,
+  S2_CH3_QUESTIONS,
+  getChapterById,
+  getChapterForSection,
+  getQuestionsForChapter,
+} from './curriculum';
 import { checkStepAnswer, parseEquation, parseExpression } from '../engine/mathEngine';
 
-test('S.2 Chapter 3 has the 3 required sections and reserved topic slots', () => {
+test('S.1 Chapter 10 and S.2 Chapter 3 have separate sections, questions, and reserved topic slots', () => {
+  assert.equal(ACTIVE_CHAPTERS.length, 2);
+  assert.equal(S1_CHAPTER_10.title, 'Manipulation of Simple Polynomials');
+  assert.equal(S1_CHAPTER_10.sections.length, 4);
+  assert.equal(S1_CH10_QUESTIONS.length, 161);
   assert.equal(S2_CHAPTER_3.title, 'Algebraic Fractions and Formulas');
   assert.equal(S2_CHAPTER_3.sections.length, 3);
-  assert.equal(S2_CHAPTER_3.sections[0].title, 'Manipulation of Algebraic Fractions');
-  assert.equal(S2_CHAPTER_3.sections[1].title, 'Formulas and Substitution');
-  assert.equal(S2_CHAPTER_3.sections[2].title, 'Change of Subject of a Formula');
+  assert.equal(S1_CH10_QUESTIONS.length + S2_CH3_QUESTIONS.length, ALL_QUESTIONS.length);
+  assert.equal(getChapterById('s1-ch10').id, 's1-ch10');
+  assert.equal(getChapterForSection('s1c10_sec1').id, 's1-ch10');
+  assert.equal(getChapterForSection('sec1').id, 's2-ch3');
+  assert.equal(getQuestionsForChapter('s1-ch10').length, 161);
   assert.ok(RESERVED_TOPIC_SLOTS.length >= 2);
 });
 

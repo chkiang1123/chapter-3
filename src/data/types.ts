@@ -1,6 +1,15 @@
-export type SectionId = 'sec1' | 'sec2' | 'sec3';
+export type ChapterId = 's1-ch10' | 's2-ch3';
 
-export type QuestionLevel = 'Level 1' | 'Level 2' | 'MCQ';
+export type SectionId =
+  | 'sec1'
+  | 'sec2'
+  | 'sec3'
+  | 's1c10_sec1'
+  | 's1c10_sec2'
+  | 's1c10_sec3'
+  | 's1c10_sec4';
+
+export type QuestionLevel = 'Level 1' | 'Level 2' | 'Level 3' | 'MCQ';
 
 export type QuestionMode = 'expression' | 'substitution' | 'subject' | 'change';
 
@@ -22,6 +31,11 @@ export type StepOp =
   | 'change'
   | 'mcq';
 
+export interface OrderRule {
+  direction: 'asc' | 'desc';
+  variable: string | 'any';
+}
+
 export interface McqOption {
   label: 'A' | 'B' | 'C' | 'D';
   text: string;
@@ -41,6 +55,8 @@ export interface QuestionStep {
     direction: 'increase' | 'decrease';
     amount: string;
   };
+  requireExpanded?: boolean;
+  orderRule?: OrderRule;
 }
 
 export interface QuestionVariant {
@@ -55,6 +71,7 @@ export interface QuestionVariant {
 export interface QuestionItem extends QuestionVariant {
   id: string;
   numberLabel: string;
+  chapterId?: ChapterId;
   sectionId: SectionId;
   level: QuestionLevel;
   mode: QuestionMode;
@@ -65,6 +82,7 @@ export interface QuestionItem extends QuestionVariant {
 
 export interface SectionDef {
   id: SectionId;
+  chapterId?: ChapterId;
   number: number;
   title: string;
   subtitle: string;
@@ -72,8 +90,8 @@ export interface SectionDef {
   levels: QuestionLevel[];
 }
 
-export interface ChapterUnit {
-  id: string;
+export interface ChapterUnit<Id extends string = ChapterId> {
+  id: Id;
   form: string;
   chapterLabel: string;
   title: string;
@@ -87,6 +105,7 @@ export interface PlayableQuestion {
   id: string;
   baseId: string;
   numberLabel: string;
+  chapterId: ChapterId;
   sectionId: SectionId;
   level: QuestionLevel;
   mode: QuestionMode;

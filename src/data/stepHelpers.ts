@@ -1,4 +1,4 @@
-import type { McqOption, QuestionStep, StepOp } from './types';
+import type { McqOption, OrderRule, QuestionStep, StepOp } from './types';
 
 export function makeStep(
   op: StepOp,
@@ -12,6 +12,8 @@ export function makeStep(
     mcqOptions?: McqOption[];
     correctMcq?: 'A' | 'B' | 'C' | 'D';
     changeAnswer?: { direction: 'increase' | 'decrease'; amount: string };
+    requireExpanded?: boolean;
+    orderRule?: OrderRule;
   },
 ): QuestionStep {
   const isBalance =
@@ -70,6 +72,8 @@ export function makeStep(
     mcqOptions: opts?.mcqOptions,
     correctMcq: opts?.correctMcq,
     changeAnswer: opts?.changeAnswer,
+    requireExpanded: opts?.requireExpanded,
+    orderRule: opts?.orderRule,
   };
 }
 

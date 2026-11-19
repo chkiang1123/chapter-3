@@ -1,10 +1,11 @@
-import { signInWithPopup, signOut, type User } from 'firebase/auth';
+import { GoogleAuthProvider, signInWithPopup, signOut, type User } from 'firebase/auth';
 import {
   Timestamp,
   collection,
   deleteDoc,
   doc,
   getDoc,
+  getDocs,
   limit,
   onSnapshot,
   orderBy,
@@ -16,8 +17,14 @@ import {
   type Unsubscribe,
 } from 'firebase/firestore';
 import { OperationType, auth, db, googleProvider, handleFirestoreError } from '../firebase';
+import { getChapterIdForSection } from '../data/curriculum';
 import {
+  ALL_CLASSES,
   EMAIL_MAX_LENGTH,
+  MAX_S1C10_SEC1_DONE,
+  MAX_S1C10_SEC2_DONE,
+  MAX_S1C10_SEC3_DONE,
+  MAX_S1C10_SEC4_DONE,
   MAX_SEC1_DONE,
   MAX_SEC2_DONE,
   MAX_SEC3_DONE,
@@ -40,6 +47,20 @@ import {
 } from './firebaseSchemaConstants';
 import type { AppStorageState, AttemptRecord, StudentProfile } from './storage';
 
+/**
+ * In-memory only OAuth access token for Google Sheets API calls.
+ * Never persisted to localStorage, sessionStorage, or Firestore.
+ */
+let cachedSheetsAccessToken: string | null = null;
+
+export function getSheetsAccessToken(): string | null {
+  return cachedSheetsAccessToken;
+}
+
+export function clearSheetsAccessToken(): void {
+  cachedSheetsAccessToken = null;
+}
+
 export interface CloudStudentSummary {
   uid: string;
   name: string;
@@ -47,13 +68,21 @@ export interface CloudStudentSummary {
   classNo: number;
   email: string;
   score: number;
+  scoreS1C10: number;
+  scoreS2C3: number;
   doneCount: number;
+  doneCountS1C10: number;
+  doneCountS2C3: number;
   extraDone: number;
   wrongAttempts: number;
   hintsUsed: number;
   completedIdsSec1: string[];
   completedIdsSec2: string[];
   completedIdsSec3: string[];
+  completedIdsS1C10Sec1: string[];
+  completedIdsS1C10Sec2: string[];
+  completedIdsS1C10Sec3: string[];
+  completedIdsS1C10Sec4: string[];
   updatedAtIso: string;
 }
 
@@ -65,6 +94,10 @@ export interface CloudLeaderboardRow {
   done: number;
   score: number;
   extraDone: number;
+  scoreS1C10: number;
+  scoreS2C3: number;
+  doneCountS1C10: number;
+  doneCountS2C3: number;
 }
 
 export interface TeacherAllowlistItem {
@@ -100,13 +133,32 @@ export function formatAuthError(error: unknown): string {
 export async function signInWithGoogle(): Promise<User> {
   try {
     const cred = await signInWithPopup(auth, googleProvider);
+    const oauthCred = GoogleAuthProvider.credentialFromResult(cred);
+    if (oauthCred?.accessToken) {
+      cachedSheetsAccessToken = oauthCred.accessToken;
+    }
     return cred.user;
   } catch (error) {
     throw new Error(formatAuthError(error));
   }
 }
 
+export async function connectGoogleSheetsScope(): Promise<string> {
+  try {
+    const cred = await signInWithPopup(auth, googleProvider);
+    const oauthCred = GoogleAuthProvider.credentialFromResult(cred);
+    if (!oauthCred?.accessToken) {
+      throw new Error('Google did not return a Google Sheets access token. Please try signing in again.');
+    }
+    cachedSheetsAccessToken = oauthCred.accessToken;
+    return oauthCred.accessToken;
+  } catch (error) {
+    throw new Error(formatAuthError(error));
+  }
+}
+
 export async function signOutGoogle(): Promise<void> {
+  cachedSheetsAccessToken = null;
   await signOut(auth);
 }
 
@@ -125,6 +177,51 @@ export async function checkIsAuthorizedTeacher(user: User | null): Promise<boole
   }
 }
 
+function docToCloudSummary(uid: string, d: Record<string, unknown>, fallbackName = 'Student', fallbackEmail = ''): CloudStudentSummary {
+  const s2Sec1 = Array.isArray(d.completedIdsSec1) ? d.completedIdsSec1.map(String) : [];
+  const s2Sec2 = Array.isArray(d.completedIdsSec2) ? d.completedIdsSec2.map(String) : [];
+  const s2Sec3 = Array.isArray(d.completedIdsSec3) ? d.completedIdsSec3.map(String) : [];
+  const s1Sec1 = Array.isArray(d.completedIdsS1C10Sec1) ? d.completedIdsS1C10Sec1.map(String) : [];
+  const s1Sec2 = Array.isArray(d.completedIdsS1C10Sec2) ? d.completedIdsS1C10Sec2.map(String) : [];
+  const s1Sec3 = Array.isArray(d.completedIdsS1C10Sec3) ? d.completedIdsS1C10Sec3.map(String) : [];
+  const s1Sec4 = Array.isArray(d.completedIdsS1C10Sec4) ? d.completedIdsS1C10Sec4.map(String) : [];
+
+  const totalScore = Number(d.score || 0);
+  const doneS1 = typeof d.doneCountS1C10 === 'number'
+    ? d.doneCountS1C10
+    : s1Sec1.length + s1Sec2.length + s1Sec3.length + s1Sec4.length;
+  const doneS2 = typeof d.doneCountS2C3 === 'number'
+    ? d.doneCountS2C3
+    : s2Sec1.length + s2Sec2.length + s2Sec3.length;
+  const scoreS1 = typeof d.scoreS1C10 === 'number' ? d.scoreS1C10 : 0;
+  const scoreS2 = typeof d.scoreS2C3 === 'number' ? d.scoreS2C3 : Math.max(0, totalScore - scoreS1);
+
+  return {
+    uid: String(d.uid || uid),
+    name: String(d.name || fallbackName),
+    cls: String(d.cls || '2A'),
+    classNo: Number(d.classNo || 1),
+    email: String(d.email || fallbackEmail),
+    score: totalScore,
+    scoreS1C10: scoreS1,
+    scoreS2C3: scoreS2,
+    doneCount: Number(d.doneCount || doneS1 + doneS2),
+    doneCountS1C10: doneS1,
+    doneCountS2C3: doneS2,
+    extraDone: Number(d.extraDone || 0),
+    wrongAttempts: Number(d.wrongAttempts || 0),
+    hintsUsed: Number(d.hintsUsed || 0),
+    completedIdsSec1: s2Sec1,
+    completedIdsSec2: s2Sec2,
+    completedIdsSec3: s2Sec3,
+    completedIdsS1C10Sec1: s1Sec1,
+    completedIdsS1C10Sec2: s1Sec2,
+    completedIdsS1C10Sec3: s1Sec3,
+    completedIdsS1C10Sec4: s1Sec4,
+    updatedAtIso: timestampToIso(d.updatedAt),
+  };
+}
+
 export async function loadStudentSummaryFromCloud(
   user: User,
 ): Promise<CloudStudentSummary | null> {
@@ -132,23 +229,7 @@ export async function loadStudentSummaryFromCloud(
   try {
     const snap = await getDoc(doc(db, 'students', user.uid));
     if (!snap.exists()) return null;
-    const d = snap.data();
-    return {
-      uid: String(d.uid || user.uid),
-      name: String(d.name || user.displayName || 'Student'),
-      cls: String(d.cls || '2A'),
-      classNo: Number(d.classNo || 1),
-      email: String(d.email || user.email || ''),
-      score: Number(d.score || 0),
-      doneCount: Number(d.doneCount || 0),
-      extraDone: Number(d.extraDone || 0),
-      wrongAttempts: Number(d.wrongAttempts || 0),
-      hintsUsed: Number(d.hintsUsed || 0),
-      completedIdsSec1: Array.isArray(d.completedIdsSec1) ? d.completedIdsSec1.map(String) : [],
-      completedIdsSec2: Array.isArray(d.completedIdsSec2) ? d.completedIdsSec2.map(String) : [],
-      completedIdsSec3: Array.isArray(d.completedIdsSec3) ? d.completedIdsSec3.map(String) : [],
-      updatedAtIso: timestampToIso(d.updatedAt),
-    };
+    return docToCloudSummary(user.uid, snap.data(), user.displayName || 'Student', user.email || '');
   } catch (error) {
     handleFirestoreError(error, OperationType.GET, path);
   }
@@ -158,12 +239,23 @@ function buildStudentSummaryFields(user: User, state: AppStorageState, profile: 
   const sec1 = clampStringArray(state.sections.sec1.completedIds, MAX_SEC1_DONE, QUESTION_ID_MAX_LENGTH);
   const sec2 = clampStringArray(state.sections.sec2.completedIds, MAX_SEC2_DONE, QUESTION_ID_MAX_LENGTH);
   const sec3 = clampStringArray(state.sections.sec3.completedIds, MAX_SEC3_DONE, QUESTION_ID_MAX_LENGTH);
-  const doneCount = clampInt(sec1.length + sec2.length + sec3.length, 0, 500);
+  const s1Sec1 = clampStringArray(state.sections.s1c10_sec1.completedIds, MAX_S1C10_SEC1_DONE, QUESTION_ID_MAX_LENGTH);
+  const s1Sec2 = clampStringArray(state.sections.s1c10_sec2.completedIds, MAX_S1C10_SEC2_DONE, QUESTION_ID_MAX_LENGTH);
+  const s1Sec3 = clampStringArray(state.sections.s1c10_sec3.completedIds, MAX_S1C10_SEC3_DONE, QUESTION_ID_MAX_LENGTH);
+  const s1Sec4 = clampStringArray(state.sections.s1c10_sec4.completedIds, MAX_S1C10_SEC4_DONE, QUESTION_ID_MAX_LENGTH);
+
+  const doneCountS1C10 = clampInt(s1Sec1.length + s1Sec2.length + s1Sec3.length + s1Sec4.length, 0, 500);
+  const doneCountS2C3 = clampInt(sec1.length + sec2.length + sec3.length, 0, 500);
+  const doneCount = clampInt(doneCountS1C10 + doneCountS2C3, 0, 500);
+
+  const scoreS1C10 = clampInt(state.scoreByChapter['s1-ch10'] ?? 0, 0, 100000);
+  const scoreS2C3 = clampInt(state.scoreByChapter['s2-ch3'] ?? state.score, 0, 100000);
+  const safeScore = clampInt(Math.max(state.score, scoreS1C10 + scoreS2C3), 0, 100000);
+
   const safeName = clampText(profile.name, NAME_MAX_LENGTH, user.displayName || 'Student');
   const safeCls = clampClass(profile.cls);
   const safeClassNo = clampClassNo(profile.classNo);
   const safeEmail = normalizeEmail(user.email || profile.email).slice(0, EMAIL_MAX_LENGTH);
-  const safeScore = clampInt(state.score, 0, 100000);
   const safeExtraDone = clampInt(state.extraDone, 0, 2000);
 
   return {
@@ -173,13 +265,21 @@ function buildStudentSummaryFields(user: User, state: AppStorageState, profile: 
       classNo: safeClassNo,
       email: safeEmail,
       score: safeScore,
+      scoreS1C10,
+      scoreS2C3,
       doneCount,
+      doneCountS1C10,
+      doneCountS2C3,
       extraDone: safeExtraDone,
       wrongAttempts: clampInt(state.wrongAttempts, 0, 20000),
       hintsUsed: clampInt(state.hintsUsed, 0, 20000),
       completedIdsSec1: sec1,
       completedIdsSec2: sec2,
       completedIdsSec3: sec3,
+      completedIdsS1C10Sec1: s1Sec1,
+      completedIdsS1C10Sec2: s1Sec2,
+      completedIdsS1C10Sec3: s1Sec3,
+      completedIdsS1C10Sec4: s1Sec4,
       updatedAt: serverTimestamp(),
     },
     leaderboardUpdate: {
@@ -188,6 +288,10 @@ function buildStudentSummaryFields(user: User, state: AppStorageState, profile: 
       classNo: safeClassNo,
       doneCount,
       score: safeScore,
+      scoreS1C10,
+      scoreS2C3,
+      doneCountS1C10,
+      doneCountS2C3,
       extraDone: safeExtraDone,
       updatedAt: serverTimestamp(),
     },
@@ -276,6 +380,7 @@ export async function recordAttemptToCloud(
       studentName: clampText(record.studentName, NAME_MAX_LENGTH, summaryUpdate.name),
       studentCls: clampClass(record.studentCls),
       studentClassNo: clampClassNo(record.studentClassNo),
+      chapterId: record.chapterId || getChapterIdForSection(record.sectionId),
       sectionId: record.sectionId,
       questionId: clampText(record.questionId, QUESTION_ID_MAX_LENGTH, 'q'),
       questionLabel: clampText(record.questionLabel, QUESTION_LABEL_MAX_LENGTH, 'Q'),
@@ -299,6 +404,7 @@ export async function recordAttemptToCloud(
 }
 
 function docToAttemptRecord(id: string, d: Record<string, unknown>, emailFallback = ''): AttemptRecord {
+  const sectionId = (d.sectionId as AttemptRecord['sectionId']) || 'sec1';
   return {
     id,
     timestamp: timestampToIso(d.createdAt),
@@ -306,7 +412,8 @@ function docToAttemptRecord(id: string, d: Record<string, unknown>, emailFallbac
     studentName: String(d.studentName || ''),
     studentCls: String(d.studentCls || '2A'),
     studentClassNo: Number(d.studentClassNo || 1),
-    sectionId: (d.sectionId as AttemptRecord['sectionId']) || 'sec1',
+    chapterId: (d.chapterId as AttemptRecord['chapterId']) || getChapterIdForSection(sectionId),
+    sectionId,
     questionId: String(d.questionId || ''),
     questionLabel: String(d.questionLabel || ''),
     type: d.type === 'Similar' ? 'Similar' : 'Main',
@@ -352,21 +459,31 @@ export function subscribeLeaderboardFromCloud(
   const path = 'leaderboard';
   const q = query(
     collection(db, 'leaderboard'),
-    where('cls', 'in', ['2A', '2B', '2C', '2D', '2E']),
+    where('cls', 'in', [...ALL_CLASSES]),
   );
   return onSnapshot(
     q,
     (snap) => {
       const rows: CloudLeaderboardRow[] = snap.docs.map((docSnap) => {
         const d = docSnap.data();
+        const totalScore = Number(d.score || 0);
+        const totalDone = Number(d.doneCount || 0);
+        const scoreS1 = typeof d.scoreS1C10 === 'number' ? d.scoreS1C10 : 0;
+        const scoreS2 = typeof d.scoreS2C3 === 'number' ? d.scoreS2C3 : Math.max(0, totalScore - scoreS1);
+        const doneS1 = typeof d.doneCountS1C10 === 'number' ? d.doneCountS1C10 : 0;
+        const doneS2 = typeof d.doneCountS2C3 === 'number' ? d.doneCountS2C3 : Math.max(0, totalDone - doneS1);
         return {
           uid: String(d.uid || docSnap.id),
           name: String(d.name || ''),
           cls: String(d.cls || '2A'),
           classNo: Number(d.classNo || 1),
-          done: Number(d.doneCount || 0),
-          score: Number(d.score || 0),
+          done: totalDone,
+          score: totalScore,
           extraDone: Number(d.extraDone || 0),
+          scoreS1C10: scoreS1,
+          scoreS2C3: scoreS2,
+          doneCountS1C10: doneS1,
+          doneCountS2C3: doneS2,
         };
       });
       onData(rows);
@@ -384,25 +501,9 @@ export function subscribeAllStudentsForTeacher(
   return onSnapshot(
     collection(db, 'students'),
     (snap) => {
-      const rows: CloudStudentSummary[] = snap.docs.map((docSnap) => {
-        const d = docSnap.data();
-        return {
-          uid: String(d.uid || docSnap.id),
-          name: String(d.name || 'Student'),
-          cls: String(d.cls || '2A'),
-          classNo: Number(d.classNo || 1),
-          email: String(d.email || ''),
-          score: Number(d.score || 0),
-          doneCount: Number(d.doneCount || 0),
-          extraDone: Number(d.extraDone || 0),
-          wrongAttempts: Number(d.wrongAttempts || 0),
-          hintsUsed: Number(d.hintsUsed || 0),
-          completedIdsSec1: Array.isArray(d.completedIdsSec1) ? d.completedIdsSec1.map(String) : [],
-          completedIdsSec2: Array.isArray(d.completedIdsSec2) ? d.completedIdsSec2.map(String) : [],
-          completedIdsSec3: Array.isArray(d.completedIdsSec3) ? d.completedIdsSec3.map(String) : [],
-          updatedAtIso: timestampToIso(d.updatedAt),
-        };
-      });
+      const rows: CloudStudentSummary[] = snap.docs.map((docSnap) =>
+        docToCloudSummary(docSnap.id, docSnap.data()),
+      );
       rows.sort((a, b) => a.cls.localeCompare(b.cls) || a.classNo - b.classNo || a.name.localeCompare(b.name));
       onData(rows);
     },
@@ -435,6 +536,25 @@ export function subscribeStudentAttemptsForTeacher(
       handleFirestoreError(error, OperationType.LIST, path);
     },
   );
+}
+
+export async function fetchAllStudentsAttemptsForTeacher(
+  students: CloudStudentSummary[],
+): Promise<AttemptRecord[]> {
+  const batches = await Promise.all(
+    students.map(async (s) => {
+      const path = `students/${s.uid}/attempts`;
+      try {
+        const snap = await getDocs(
+          query(collection(db, 'students', s.uid, 'attempts'), orderBy('createdAt', 'desc'), limit(200)),
+        );
+        return snap.docs.map((docSnap) => docToAttemptRecord(docSnap.id, docSnap.data(), s.email));
+      } catch (error) {
+        handleFirestoreError(error, OperationType.LIST, path);
+      }
+    }),
+  );
+  return batches.flat().sort((a, b) => b.timestamp.localeCompare(a.timestamp));
 }
 
 export function subscribeTeacherAllowlist(

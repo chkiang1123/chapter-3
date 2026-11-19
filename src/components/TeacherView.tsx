@@ -1,8 +1,28 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { User } from 'firebase/auth';
-import { ArrowLeft, Download, Lock, LogIn, ShieldCheck, Trash2, UserPlus } from 'lucide-react';
-import { ALL_QUESTIONS, S2_CHAPTER_3, getQuestionsForSection } from '../data/curriculum';
-import type { SectionId } from '../data/types';
+import {
+  ArrowLeft,
+  Download,
+  ExternalLink,
+  FileSpreadsheet,
+  Lock,
+  LogIn,
+  RefreshCw,
+  ShieldCheck,
+  Trash2,
+  UserPlus,
+} from 'lucide-react';
+import {
+  ACTIVE_CHAPTERS,
+  ALL_QUESTIONS,
+  S1_CHAPTER_10,
+  S2_CHAPTER_3,
+  getChapterById,
+  getChapterForSection,
+  getQuestionsForChapter,
+  getQuestionsForSection,
+} from '../data/curriculum';
+import type { ChapterId, SectionId } from '../data/types';
 import {
   PRIMARY_TEACHER_EMAILS,
   isValidEmailAddress,
@@ -10,6 +30,10 @@ import {
 } from '../state/firebaseSchemaConstants';
 import {
   addTeacherAllowlistEmail,
+  clearSheetsAccessToken,
+  connectGoogleSheetsScope,
+  fetchAllStudentsAttemptsForTeacher,
+  getSheetsAccessToken,
   removeTeacherAllowlistEmail,
   subscribeAllStudentsForTeacher,
   subscribeStudentAttemptsForTeacher,
@@ -19,6 +43,16 @@ import {
   type TeacherAllowlistItem,
 } from '../state/firebaseSync';
 import {
+  SHEET_TABS,
+  createTeacherSpreadsheet,
+  inspectSpreadsheet,
+  parseSpreadsheetId,
+  syncAllDataToSpreadsheet,
+  type SheetMetadata,
+  type SyncResult,
+} from '../state/googleSheetsSync';
+import {
+  S1_CLASSES,
   S2_CLASSES,
   buildLeaderboards,
   formatDuration,
@@ -30,6 +64,7 @@ import { MathExpr } from './MathExpr';
 
 interface TeacherViewProps {
   state: AppStorageState;
+  activeChapterId: ChapterId;
   authUser: User | null;
   authReady: boolean;
   isTeacher: boolean;
@@ -43,9 +78,19 @@ interface TeacherViewProps {
 }
 
 type TeacherTab = 'students' | 'questions' | 'board' | 'teachers';
+type ChapterFilter = ChapterId | 'ALL';
+
+const SHEETS_ID_STORAGE_KEY = 'skhbbss_teacher_sheet_id_v1';
+
+interface PendingSheetConfirm {
+  meta: SheetMetadata;
+  students: CloudStudentSummary[];
+  attempts: AttemptRecord[];
+}
 
 export function TeacherView({
   state,
+  activeChapterId,
   authUser,
   authReady,
   isTeacher,
@@ -58,8 +103,10 @@ export function TeacherView({
   onBack,
 }: TeacherViewProps) {
   const [tab, setTab] = useState<TeacherTab>('students');
+  const [chapterFilter, setChapterFilter] = useState<ChapterFilter>('ALL');
   const [classFilter, setClassFilter] = useState('');
   const [sectionFilter, setSectionFilter] = useState<SectionId | 'ALL'>('ALL');
+  const [boardChapter, setBoardChapter] = useState<ChapterId>(activeChapterId);
   const [search, setSearch] = useState('');
   const [selectedUid, setSelectedUid] = useState<string | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
@@ -73,7 +120,20 @@ export function TeacherView({
   const [allowlistErr, setAllowlistErr] = useState('');
   const [savingAllowlist, setSavingAllowlist] = useState(false);
 
-  const totalQs = ALL_QUESTIONS.length;
+  // Google Sheets Sync (Option B) — non-sensitive spreadsheet ID only in localStorage; token strictly in memory
+  const [spreadsheetInput, setSpreadsheetInput] = useState<string>(() => {
+    if (typeof window === 'undefined') return '';
+    return window.localStorage.getItem(SHEETS_ID_STORAGE_KEY) || '';
+  });
+  const [hasSheetsToken, setHasSheetsToken] = useState<boolean>(() => Boolean(getSheetsAccessToken()));
+  const [sheetsBusy, setSheetsBusy] = useState(false);
+  const [sheetsErr, setSheetsErr] = useState('');
+  const [sheetsResult, setSheetsResult] = useState<SyncResult | null>(null);
+  const [pendingConfirm, setPendingConfirm] = useState<PendingSheetConfirm | null>(null);
+
+  useEffect(() => {
+    setHasSheetsToken(Boolean(getSheetsAccessToken()));
+  }, [authUser]);
 
   useEffect(() => {
     if (!authReady || !authUser || !isTeacher) {
@@ -110,29 +170,70 @@ export function TeacherView({
     return () => unsubAttempts();
   }, [authReady, authUser, isTeacher, selectedStudent?.uid, selectedStudent?.email]);
 
+  const totalQs = useMemo(() => {
+    if (chapterFilter === 's1-ch10') return getQuestionsForChapter('s1-ch10').length;
+    if (chapterFilter === 's2-ch3') return getQuestionsForChapter('s2-ch3').length;
+    return ALL_QUESTIONS.length;
+  }, [chapterFilter]);
+
   const filteredStudents = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return cloudStudents.filter(
-      (s) =>
-        (!classFilter || s.cls === classFilter) &&
-        (!q ||
-          s.name.toLowerCase().includes(q) ||
-          s.email.toLowerCase().includes(q) ||
-          `${s.cls} ${s.classNo}`.toLowerCase().includes(q)),
-    );
-  }, [cloudStudents, classFilter, search]);
+    return cloudStudents.filter((s) => {
+      if (classFilter && s.cls !== classFilter) return false;
+      if (chapterFilter === 's1-ch10' && !s.cls.startsWith('1') && s.doneCountS1C10 === 0 && s.scoreS1C10 === 0) {
+        return false;
+      }
+      if (chapterFilter === 's2-ch3' && !s.cls.startsWith('2') && s.doneCountS2C3 === 0 && s.scoreS2C3 === 0) {
+        return false;
+      }
+      if (
+        q &&
+        !s.name.toLowerCase().includes(q) &&
+        !s.email.toLowerCase().includes(q) &&
+        !`${s.cls} ${s.classNo}`.toLowerCase().includes(q)
+      ) {
+        return false;
+      }
+      return true;
+    });
+  }, [cloudStudents, classFilter, chapterFilter, search]);
 
-  const completedCount = filteredStudents.filter((s) => s.doneCount >= totalQs).length;
-  const startedCount = filteredStudents.filter((s) => s.doneCount > 0 || s.extraDone > 0).length;
+  function getStudentDisplayStats(s: CloudStudentSummary): { done: number; score: number } {
+    if (chapterFilter === 's1-ch10') {
+      return { done: s.doneCountS1C10, score: s.scoreS1C10 };
+    }
+    if (chapterFilter === 's2-ch3') {
+      return { done: s.doneCountS2C3, score: s.scoreS2C3 };
+    }
+    return { done: s.doneCount, score: s.score };
+  }
+
+  const completedCount = filteredStudents.filter((s) => getStudentDisplayStats(s).done >= totalQs).length;
+  const startedCount = filteredStudents.filter(
+    (s) => getStudentDisplayStats(s).done > 0 || s.extraDone > 0,
+  ).length;
   const avgDone = filteredStudents.length
-    ? filteredStudents.reduce((a, s) => a + s.doneCount, 0) / filteredStudents.length
+    ? filteredStudents.reduce((a, s) => a + getStudentDisplayStats(s).done, 0) / filteredStudents.length
     : 0;
   const avgScore = filteredStudents.length
-    ? Math.round(filteredStudents.reduce((a, s) => a + s.score, 0) / filteredStudents.length)
+    ? Math.round(
+        filteredStudents.reduce((a, s) => a + getStudentDisplayStats(s).score, 0) / filteredStudents.length,
+      )
     : 0;
 
+  const availableSections = useMemo(() => {
+    if (chapterFilter === 's1-ch10') return S1_CHAPTER_10.sections;
+    if (chapterFilter === 's2-ch3') return S2_CHAPTER_3.sections;
+    return [...S1_CHAPTER_10.sections, ...S2_CHAPTER_3.sections];
+  }, [chapterFilter]);
+
   const filteredQuestions = useMemo(() => {
-    const base = sectionFilter === 'ALL' ? ALL_QUESTIONS : getQuestionsForSection(sectionFilter);
+    const base =
+      sectionFilter !== 'ALL'
+        ? getQuestionsForSection(sectionFilter)
+        : chapterFilter === 'ALL'
+          ? ALL_QUESTIONS
+          : getQuestionsForChapter(chapterFilter);
     const q = search.trim().toLowerCase();
     if (!q) return base;
     return base.filter(
@@ -141,7 +242,7 @@ export function TeacherView({
         item.topicTag.toLowerCase().includes(q) ||
         item.promptEq.toLowerCase().includes(q),
     );
-  }, [sectionFilter, search]);
+  }, [sectionFilter, chapterFilter, search]);
 
   // --- Access Gate for unauthenticated or non-teacher users ---
   if (!authReady) {
@@ -162,7 +263,7 @@ export function TeacherView({
           <div className="space-y-1">
             <h1 className="text-2xl font-extrabold tracking-tight">Teacher View · Restricted Access</h1>
             <p className="text-sm text-[var(--soft)]">
-              Only authorized teacher Google accounts can view student records and class analytics.
+              Only authorized teacher Google accounts at S. K. H. Bishop Baker Secondary School can view student records and sync to Google Sheets.
             </p>
           </div>
         </div>
@@ -216,15 +317,142 @@ export function TeacherView({
     );
   }
 
+  function handleSaveSpreadsheetInput(value: string) {
+    setSpreadsheetInput(value);
+    setSheetsErr('');
+    if (typeof window !== 'undefined') {
+      const parsed = parseSpreadsheetId(value);
+      if (parsed) {
+        window.localStorage.setItem(SHEETS_ID_STORAGE_KEY, parsed);
+      } else if (!value.trim()) {
+        window.localStorage.removeItem(SHEETS_ID_STORAGE_KEY);
+      }
+    }
+  }
+
+  async function handleConnectSheets() {
+    setSheetsBusy(true);
+    setSheetsErr('');
+    try {
+      await connectGoogleSheetsScope();
+      setHasSheetsToken(true);
+    } catch (err) {
+      setSheetsErr(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSheetsBusy(false);
+    }
+  }
+
+  async function handleCreateNewSheet() {
+    const token = getSheetsAccessToken();
+    if (!token) {
+      setSheetsErr('Please click "Connect Google Sheets" first to authorize spreadsheet creation.');
+      return;
+    }
+    setSheetsBusy(true);
+    setSheetsErr('');
+    try {
+      const meta = await createTeacherSpreadsheet(token);
+      handleSaveSpreadsheetInput(meta.spreadsheetId);
+      const attempts = await fetchAllStudentsAttemptsForTeacher(cloudStudents);
+      setPendingConfirm({
+        meta,
+        students: cloudStudents,
+        attempts,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.toLowerCase().includes('expired')) {
+        clearSheetsAccessToken();
+        setHasSheetsToken(false);
+      }
+      setSheetsErr(msg);
+    } finally {
+      setSheetsBusy(false);
+    }
+  }
+
+  async function handlePrepareSyncToSheets() {
+    const token = getSheetsAccessToken();
+    if (!token) {
+      setSheetsErr('Please click "Connect Google Sheets" first.');
+      return;
+    }
+    const id = parseSpreadsheetId(spreadsheetInput);
+    if (!id) {
+      setSheetsErr('Paste a valid Google Spreadsheet URL or Spreadsheet ID, or click "Create New Sheet".');
+      return;
+    }
+    setSheetsBusy(true);
+    setSheetsErr('');
+    try {
+      const [meta, attempts] = await Promise.all([
+        inspectSpreadsheet(token, id),
+        fetchAllStudentsAttemptsForTeacher(cloudStudents),
+      ]);
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(SHEETS_ID_STORAGE_KEY, meta.spreadsheetId);
+      }
+      setPendingConfirm({
+        meta,
+        students: cloudStudents,
+        attempts,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.toLowerCase().includes('expired')) {
+        clearSheetsAccessToken();
+        setHasSheetsToken(false);
+      }
+      setSheetsErr(msg);
+    } finally {
+      setSheetsBusy(false);
+    }
+  }
+
+  async function handleConfirmWriteSheets() {
+    if (!pendingConfirm) return;
+    const token = getSheetsAccessToken();
+    if (!token) {
+      setPendingConfirm(null);
+      setHasSheetsToken(false);
+      setSheetsErr('Google Sheets authorization expired. Please reconnect and try again.');
+      return;
+    }
+    setSheetsBusy(true);
+    setSheetsErr('');
+    try {
+      const res = await syncAllDataToSpreadsheet(
+        token,
+        pendingConfirm.meta.spreadsheetId,
+        pendingConfirm.students,
+        pendingConfirm.attempts,
+      );
+      setSheetsResult(res);
+      setPendingConfirm(null);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.toLowerCase().includes('expired')) {
+        clearSheetsAccessToken();
+        setHasSheetsToken(false);
+      }
+      setSheetsErr(msg);
+      setPendingConfirm(null);
+    } finally {
+      setSheetsBusy(false);
+    }
+  }
+
   function handleExportCsv() {
     if (selectedStudent && selectedAttempts.length > 0) {
       const header = [
         'Timestamp',
+        'Chapter',
+        'Section',
         'Name',
         'Email',
         'Class',
         'ClassNo',
-        'Section',
         'Question',
         'Type',
         'Points',
@@ -237,11 +465,12 @@ export function TeacherView({
       ];
       const rows = selectedAttempts.map((r) => [
         r.timestamp,
+        getChapterById(r.chapterId || getChapterForSection(r.sectionId).id).chapterLabel,
+        r.sectionId,
         r.studentName,
         r.studentEmail,
         r.studentCls,
         r.studentClassNo,
-        r.sectionId,
         r.questionLabel,
         r.type,
         r.points,
@@ -259,7 +488,7 @@ export function TeacherView({
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `s2_ch3_${selectedStudent.cls}_${selectedStudent.classNo}_attempts.csv`;
+      a.download = `skhbbss_${selectedStudent.cls}_${selectedStudent.classNo}_attempts.csv`;
       a.click();
       URL.revokeObjectURL(url);
       return;
@@ -270,9 +499,12 @@ export function TeacherView({
       'ClassNo',
       'Name',
       'Email',
-      'Done',
-      'TotalQuestions',
-      'Points',
+      'S1_Ch10_Done',
+      'S1_Ch10_Score',
+      'S2_Ch3_Done',
+      'S2_Ch3_Score',
+      'TotalDone',
+      'TotalPoints',
       'SimilarQs',
       'WrongAttempts',
       'HintsUsed',
@@ -283,8 +515,11 @@ export function TeacherView({
       s.classNo,
       s.name,
       s.email,
+      s.doneCountS1C10,
+      s.scoreS1C10,
+      s.doneCountS2C3,
+      s.scoreS2C3,
       s.doneCount,
-      totalQs,
       s.score,
       s.extraDone,
       s.wrongAttempts,
@@ -298,7 +533,7 @@ export function TeacherView({
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 's2_ch3_all_students_summary.csv';
+    a.download = 'skhbbss_balance_quest_summary.csv';
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -337,8 +572,14 @@ export function TeacherView({
     }
   }
 
-  const boardCls = classFilter || state.profile?.cls || '2A';
-  const boardData = buildLeaderboards(state, boardCls, cloudLeaderboard);
+  const boardFormClasses = boardChapter === 's1-ch10' ? S1_CLASSES : S2_CLASSES;
+  const boardCls =
+    classFilter && (boardFormClasses as readonly string[]).includes(classFilter)
+      ? classFilter
+      : state.profile?.cls && (boardFormClasses as readonly string[]).includes(state.profile.cls)
+        ? state.profile.cls
+        : boardFormClasses[0];
+  const boardData = buildLeaderboards(state, boardCls, cloudLeaderboard, boardChapter);
 
   return (
     <div className="space-y-6 pb-10">
@@ -350,10 +591,10 @@ export function TeacherView({
             <span>Authorized Teacher · {authUser.email}</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-            Teacher Dashboard · {S2_CHAPTER_3.form} {S2_CHAPTER_3.chapterLabel}
+            Teacher Dashboard · S.1 Ch.10 &amp; S.2 Ch.3
           </h1>
           <p className="text-sm text-[var(--soft)]">
-            {S2_CHAPTER_3.title} · Live student records &amp; authorized teacher access control
+            S. K. H. Bishop Baker Secondary School · Firestore live database + Google Sheets sync
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
@@ -376,6 +617,95 @@ export function TeacherView({
           </button>
         </div>
       </div>
+
+      {/* Google Sheets Sync Panel (Option B) */}
+      <section
+        aria-label="Google Sheets Synchronization"
+        className="p-4 sm:p-5 border-2 border-[var(--ink)] rounded-[14px] bg-[var(--panel)] space-y-3"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <FileSpreadsheet className="w-5 h-5 text-[var(--green)] shrink-0" aria-hidden="true" />
+            <div>
+              <h2 className="text-base font-extrabold">Google Sheets Sync (Firebase → Google Sheets)</h2>
+              <p className="text-xs text-[var(--soft)]">
+                Export all S.1 Ch.10 &amp; S.2 Ch.3 student summaries and attempt logs directly to your Google Spreadsheet.
+              </p>
+            </div>
+          </div>
+
+          {!hasSheetsToken && (
+            <button
+              type="button"
+              disabled={sheetsBusy}
+              onClick={handleConnectSheets}
+              className="inline-flex items-center gap-2 px-4 py-2 border-2 border-[var(--ink)] rounded-[10px] bg-white text-[#1f1f1f] text-xs sm:text-sm font-extrabold shadow-[0_2px_0_var(--key-edge)] hover:bg-gray-50 cursor-pointer disabled:opacity-50"
+            >
+              <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
+                <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17Z" />
+                <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.11-6.72-4.96H1.29v3.14C3.26 21.3 7.31 24 12 24Z" />
+                <path fill="#FBBC05" d="M5.28 14.24c-.24-.72-.38-1.49-.38-2.24s.14-1.52.38-2.24V6.62H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.38l3.99-3.14Z" />
+                <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.99 3.14c.95-2.85 3.6-4.96 6.72-4.96Z" />
+              </svg>
+              <span>{sheetsBusy ? 'Connecting...' : 'Connect Google Sheets'}</span>
+            </button>
+          )}
+        </div>
+
+        <div className="flex flex-col md:flex-row items-stretch md:items-center gap-2.5">
+          <input
+            type="text"
+            value={spreadsheetInput}
+            onChange={(e) => handleSaveSpreadsheetInput(e.target.value)}
+            placeholder="Paste Google Spreadsheet URL or ID (e.g. https://docs.google.com/spreadsheets/d/...)"
+            aria-label="Target Google Spreadsheet URL or ID"
+            className="flex-1 min-h-[40px] px-3 py-1.5 border-2 border-[var(--key-edge)] rounded-[9px] bg-[var(--paper)] text-[var(--ink)] text-xs sm:text-sm"
+          />
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              type="button"
+              disabled={sheetsBusy || !hasSheetsToken}
+              onClick={handleCreateNewSheet}
+              className="bq-btn-ghost px-3.5 py-2 text-xs sm:text-sm font-bold disabled:opacity-45"
+            >
+              Create New Sheet
+            </button>
+            <button
+              type="button"
+              disabled={sheetsBusy || !hasSheetsToken || !parseSpreadsheetId(spreadsheetInput)}
+              onClick={handlePrepareSyncToSheets}
+              className="bq-btn inline-flex items-center gap-1.5 px-4 py-2 text-xs sm:text-sm disabled:opacity-45"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${sheetsBusy ? 'animate-spin' : ''}`} aria-hidden="true" />
+              <span>Sync to Google Sheets</span>
+            </button>
+          </div>
+        </div>
+
+        {sheetsErr && (
+          <p className="text-xs sm:text-sm font-bold text-[var(--red)]" role="alert">
+            {sheetsErr}
+          </p>
+        )}
+
+        {sheetsResult && (
+          <div className="flex flex-wrap items-center justify-between gap-2 p-3 border-2 border-[var(--green)] rounded-[10px] bg-[var(--paper)] text-xs sm:text-sm">
+            <div>
+              <b className="text-[var(--green)]">Synced {sheetsResult.studentsWritten} students &amp; {sheetsResult.attemptsWritten} attempts</b>{' '}
+              to <span className="font-bold">{sheetsResult.spreadsheetTitle}</span> ({formatShortTime(sheetsResult.syncedAtIso)})
+            </div>
+            <a
+              href={sheetsResult.spreadsheetUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 font-extrabold underline underline-offset-2 text-[var(--ink)] hover:opacity-80"
+            >
+              <span>Open Google Sheet</span>
+              <ExternalLink className="w-3.5 h-3.5" aria-hidden="true" />
+            </a>
+          </div>
+        )}
+      </section>
 
       {/* Controls & Tabs */}
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -407,6 +737,26 @@ export function TeacherView({
 
         {tab !== 'teachers' && (
           <div className="flex flex-wrap items-center gap-2.5">
+            {tab !== 'board' && (
+              <label className="text-sm font-bold flex items-center gap-1.5">
+                <span>Chapter</span>
+                <select
+                  value={chapterFilter}
+                  onChange={(e) => {
+                    setChapterFilter(e.target.value as ChapterFilter);
+                    setSectionFilter('ALL');
+                  }}
+                  className="min-h-[38px] px-2.5 border-2 border-[var(--line)] rounded-[9px] bg-[var(--paper)] font-normal"
+                >
+                  <option value="ALL">All chapters</option>
+                  {ACTIVE_CHAPTERS.map((ch) => (
+                    <option key={ch.id} value={ch.id}>
+                      {ch.form} {ch.chapterLabel}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <label className="text-sm font-bold flex items-center gap-1.5">
               <span>Class</span>
               <select
@@ -415,11 +765,20 @@ export function TeacherView({
                 className="min-h-[38px] px-2.5 border-2 border-[var(--line)] rounded-[9px] bg-[var(--paper)] font-normal"
               >
                 <option value="">All classes</option>
-                {S2_CLASSES.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
+                <optgroup label="S.1 Classes">
+                  {S1_CLASSES.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="S.2 Classes">
+                  {S2_CLASSES.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </optgroup>
               </select>
             </label>
             {tab === 'questions' && (
@@ -430,10 +789,10 @@ export function TeacherView({
                   onChange={(e) => setSectionFilter(e.target.value as SectionId | 'ALL')}
                   className="min-h-[38px] px-2.5 border-2 border-[var(--line)] rounded-[9px] bg-[var(--paper)] font-normal"
                 >
-                  <option value="ALL">All 3 sections</option>
-                  {S2_CHAPTER_3.sections.map((s) => (
+                  <option value="ALL">All sections</option>
+                  {availableSections.map((s) => (
                     <option key={s.id} value={s.id}>
-                      Section {s.number}: {s.title}
+                      {getChapterForSection(s.id).form} Sec {s.number}: {s.title}
                     </option>
                   ))}
                 </select>
@@ -446,7 +805,7 @@ export function TeacherView({
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder={tab === 'questions' ? 'Filter Q# or topic' : 'Search name or email'}
                 aria-label={tab === 'questions' ? 'Filter questions' : 'Search students'}
-                className="min-h-[38px] w-56 sm:w-60 px-3 border-2 border-[var(--line)] rounded-[9px] bg-[var(--paper)] text-sm"
+                className="min-h-[38px] w-52 sm:w-56 px-3 border-2 border-[var(--line)] rounded-[9px] bg-[var(--paper)] text-sm"
               />
             )}
           </div>
@@ -483,7 +842,7 @@ export function TeacherView({
           <div className="overflow-x-auto border-2 border-[var(--ink)] rounded-[14px] bg-[var(--paper)]">
             {filteredStudents.length === 0 ? (
               <div className="p-6 text-sm text-[var(--soft)]">
-                No synced student records found yet. Once students sign in with Google, enter their Class &amp; Class No., and save or answer questions, their live progress appears here automatically.
+                No synced student records found for this filter yet. Once students sign in with Google, enter their Class &amp; Class No., and save or answer questions, their live progress appears here automatically.
               </div>
             ) : (
               <table className="w-full border-collapse text-sm tabular-nums">
@@ -492,23 +851,17 @@ export function TeacherView({
                     <th className="py-2.5 px-3">Class / No.</th>
                     <th className="py-2.5 px-3">Name</th>
                     <th className="py-2.5 px-3">Progress</th>
+                    <th className="py-2.5 px-3 text-right">S.1 / S.2 Split</th>
                     <th className="py-2.5 px-3 text-right">Points</th>
-                    <th className="py-2.5 px-3 text-right">Similar Qs</th>
                     <th className="py-2.5 px-3 text-right">Wrong</th>
                     <th className="py-2.5 px-3 text-right">Hints</th>
-                    <th className="py-2.5 px-3">Status</th>
                     <th className="py-2.5 px-3">Last active</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredStudents.map((s) => {
-                    const pct = Math.round((s.doneCount / totalQs) * 100);
-                    const status =
-                      s.doneCount >= totalQs
-                        ? 'Completed'
-                        : s.doneCount > 0 || s.extraDone > 0
-                          ? 'In progress'
-                          : 'Not started';
+                    const stats = getStudentDisplayStats(s);
+                    const pct = totalQs > 0 ? Math.min(100, Math.round((stats.done / totalQs) * 100)) : 0;
                     const isSelected = s.uid === selectedUid;
                     return (
                       <tr
@@ -534,13 +887,14 @@ export function TeacherView({
                           <span className="inline-block w-20 h-2.5 mr-2 overflow-hidden align-middle border border-[var(--ink)] rounded bg-[var(--paper)]">
                             <span className="block h-full bg-[var(--green)]" style={{ width: `${pct}%` }} />
                           </span>
-                          {s.doneCount} / {totalQs}
+                          {stats.done} / {totalQs}
                         </td>
-                        <td className="py-2.5 px-3 text-right font-extrabold">{s.score}</td>
-                        <td className="py-2.5 px-3 text-right">{s.extraDone}</td>
+                        <td className="py-2.5 px-3 text-right text-xs whitespace-nowrap">
+                          S1: {s.doneCountS1C10} ({s.scoreS1C10}) · S2: {s.doneCountS2C3} ({s.scoreS2C3})
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-extrabold">{stats.score}</td>
                         <td className="py-2.5 px-3 text-right">{s.wrongAttempts}</td>
                         <td className="py-2.5 px-3 text-right">{s.hintsUsed}</td>
-                        <td className="py-2.5 px-3 whitespace-nowrap font-bold">{status}</td>
                         <td className="py-2.5 px-3 whitespace-nowrap text-xs">{formatShortTime(s.updatedAtIso)}</td>
                       </tr>
                     );
@@ -557,8 +911,9 @@ export function TeacherView({
                 <div>
                   <h2 className="text-xl font-extrabold">{selectedStudent.name}</h2>
                   <p className="text-sm text-[var(--soft)]">
-                    {selectedStudent.cls} ({selectedStudent.classNo}) · {selectedStudent.email} ·{' '}
-                    {selectedStudent.doneCount} / {totalQs} questions · {selectedStudent.score} points
+                    {selectedStudent.cls} ({selectedStudent.classNo}) · {selectedStudent.email} · S.1 Ch.10:{' '}
+                    {selectedStudent.doneCountS1C10} Qs ({selectedStudent.scoreS1C10} pts) · S.2 Ch.3:{' '}
+                    {selectedStudent.doneCountS2C3} Qs ({selectedStudent.scoreS2C3} pts)
                   </p>
                 </div>
                 {selectedStudent.uid === authUser.uid && (
@@ -605,6 +960,7 @@ export function TeacherView({
                     <thead>
                       <tr className="border-b-2 border-[var(--ink)] bg-[var(--panel)] text-left text-xs uppercase text-[var(--soft)]">
                         <th className="py-2 px-2.5">Time</th>
+                        <th className="py-2 px-2.5">Chapter</th>
                         <th className="py-2 px-2.5">Question</th>
                         <th className="py-2 px-2.5">Prompt</th>
                         <th className="py-2 px-2.5 text-right">Points</th>
@@ -615,26 +971,32 @@ export function TeacherView({
                       </tr>
                     </thead>
                     <tbody>
-                      {selectedAttempts.map((r) => (
-                        <tr key={r.id} className="border-b border-dashed border-[var(--line)]">
-                          <td className="py-2 px-2.5 whitespace-nowrap">{formatShortTime(r.timestamp)}</td>
-                          <td className="py-2 px-2.5 whitespace-nowrap font-bold">
-                            {r.questionLabel} {r.type === 'Similar' ? '· Remediation' : ''}
-                          </td>
-                          <td className="py-2 px-2.5">
-                            <MathExpr expr={r.promptEq} />
-                          </td>
-                          <td className="py-2 px-2.5 text-right">
-                            {r.type === 'Similar' ? '–' : `${r.points} / ${r.maxPoints}`}
-                          </td>
-                          <td className="py-2 px-2.5 text-right">{r.wrongMoves + r.wrongLines}</td>
-                          <td className="py-2 px-2.5 text-right">{r.hints}</td>
-                          <td className="py-2 px-2.5 text-right">{formatDuration(r.seconds)}</td>
-                          <td className="py-2 px-2.5 text-xs text-[var(--soft)]">
-                            {r.wrongInputs.join(' | ') || '–'}
-                          </td>
-                        </tr>
-                      ))}
+                      {selectedAttempts.map((r) => {
+                        const ch = getChapterById(r.chapterId || getChapterForSection(r.sectionId).id);
+                        return (
+                          <tr key={r.id} className="border-b border-dashed border-[var(--line)]">
+                            <td className="py-2 px-2.5 whitespace-nowrap">{formatShortTime(r.timestamp)}</td>
+                            <td className="py-2 px-2.5 whitespace-nowrap text-xs font-bold">
+                              {ch.form} {ch.chapterLabel}
+                            </td>
+                            <td className="py-2 px-2.5 whitespace-nowrap font-bold">
+                              {r.questionLabel} {r.type === 'Similar' ? '· Remediation' : ''}
+                            </td>
+                            <td className="py-2 px-2.5">
+                              <MathExpr expr={r.promptEq} />
+                            </td>
+                            <td className="py-2 px-2.5 text-right">
+                              {r.type === 'Similar' ? '–' : `${r.points} / ${r.maxPoints}`}
+                            </td>
+                            <td className="py-2 px-2.5 text-right">{r.wrongMoves + r.wrongLines}</td>
+                            <td className="py-2 px-2.5 text-right">{r.hints}</td>
+                            <td className="py-2 px-2.5 text-right">{formatDuration(r.seconds)}</td>
+                            <td className="py-2 px-2.5 text-xs text-[var(--soft)]">
+                              {r.wrongInputs.join(' | ') || '–'}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -650,7 +1012,7 @@ export function TeacherView({
             <thead>
               <tr className="border-b-2 border-[var(--ink)] bg-[var(--panel)] text-left text-xs uppercase tracking-wider text-[var(--soft)]">
                 <th className="py-2.5 px-3">Q#</th>
-                <th className="py-2.5 px-3">Section &amp; Level</th>
+                <th className="py-2.5 px-3">Chapter &amp; Section</th>
                 <th className="py-2.5 px-3">Problem</th>
                 <th className="py-2.5 px-3 text-right">Steps</th>
                 <th className="py-2.5 px-3 text-right">Attempts</th>
@@ -661,7 +1023,8 @@ export function TeacherView({
             </thead>
             <tbody>
               {filteredQuestions.map((q) => {
-                const sec = S2_CHAPTER_3.sections.find((s) => s.id === q.sectionId)!;
+                const ch = getChapterForSection(q.sectionId);
+                const sec = ch.sections.find((s) => s.id === q.sectionId)!;
                 const mainRuns = selectedAttempts.filter((r) => r.questionId === q.id && r.type === 'Main');
                 const simRuns = selectedAttempts.filter((r) => r.questionId === q.id && r.type === 'Similar');
                 const cleanCount = mainRuns.filter((r) => r.wrongMoves + r.wrongLines === 0).length;
@@ -674,7 +1037,10 @@ export function TeacherView({
                   <tr key={q.id} className="border-b border-dashed border-[var(--line)]">
                     <td className="py-2.5 px-3 font-extrabold whitespace-nowrap">{q.numberLabel}</td>
                     <td className="py-2.5 px-3">
-                      <span className="font-bold">Section {sec.number}</span> · {q.level}
+                      <span className="font-bold">
+                        {ch.form} {ch.chapterLabel} · Sec {sec.number}
+                      </span>{' '}
+                      · {q.level}
                       <div className="text-xs text-[var(--soft)]">
                         {q.topicTag}
                         {q.sourceTag ? ` · ${q.sourceTag}` : ''}
@@ -713,39 +1079,61 @@ export function TeacherView({
       )}
 
       {tab === 'board' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {[
-            { title: `Class ${boardCls} · Top 10`, rows: boardData.classTop },
-            { title: 'Form S.2 · Top 20', rows: boardData.formTop },
-          ].map((b) => (
-            <div key={b.title} className="p-5 border-2 border-[var(--ink)] rounded-[14px] bg-[var(--paper)]">
-              <h2 className="text-lg font-extrabold mb-3">{b.title}</h2>
-              <table className="w-full border-collapse text-sm tabular-nums">
-                <thead>
-                  <tr className="border-b-2 border-[var(--ink)] text-left text-xs uppercase text-[var(--soft)]">
-                    <th className="py-2 px-2">#</th>
-                    <th className="py-2 px-2">Name</th>
-                    <th className="py-2 px-2">Class</th>
-                    <th className="py-2 px-2 text-right">Done</th>
-                    <th className="py-2 px-2 text-right">Points</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {b.rows.map((r) => (
-                    <tr key={`${r.cls}-${r.classNo}-${r.name}`} className="border-b border-dashed border-[var(--line)]">
-                      <td className="py-2 px-2 font-extrabold">{r.rank}</td>
-                      <td className="py-2 px-2">{r.name}</td>
-                      <td className="py-2 px-2">
-                        {r.cls} ({r.classNo})
-                      </td>
-                      <td className="py-2 px-2 text-right">{r.done}</td>
-                      <td className="py-2 px-2 text-right font-extrabold">{r.score}</td>
+        <div className="space-y-4">
+          <div className="flex flex-wrap gap-2">
+            {ACTIVE_CHAPTERS.map((ch) => (
+              <button
+                key={ch.id}
+                type="button"
+                onClick={() => setBoardChapter(ch.id)}
+                className={`px-3.5 py-1.5 border-2 border-[var(--ink)] rounded-[9px] text-xs font-extrabold cursor-pointer ${
+                  boardChapter === ch.id
+                    ? 'bg-[var(--yellow)] text-[var(--yellow-ink)]'
+                    : 'bg-[var(--paper)] hover:bg-[var(--panel)]'
+                }`}
+              >
+                {ch.form} {ch.chapterLabel}
+              </button>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {[
+              { title: `Class ${boardCls} · Top 10`, rows: boardData.classTop },
+              {
+                title: `Form ${boardChapter === 's1-ch10' ? 'S.1' : 'S.2'} · Top 20`,
+                rows: boardData.formTop,
+              },
+            ].map((b) => (
+              <div key={b.title} className="p-5 border-2 border-[var(--ink)] rounded-[14px] bg-[var(--paper)]">
+                <h2 className="text-lg font-extrabold mb-3">{b.title}</h2>
+                <table className="w-full border-collapse text-sm tabular-nums">
+                  <thead>
+                    <tr className="border-b-2 border-[var(--ink)] text-left text-xs uppercase text-[var(--soft)]">
+                      <th className="py-2 px-2">#</th>
+                      <th className="py-2 px-2">Name</th>
+                      <th className="py-2 px-2">Class</th>
+                      <th className="py-2 px-2 text-right">Done</th>
+                      <th className="py-2 px-2 text-right">Points</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ))}
+                  </thead>
+                  <tbody>
+                    {b.rows.map((r) => (
+                      <tr key={`${r.cls}-${r.classNo}-${r.name}`} className="border-b border-dashed border-[var(--line)]">
+                        <td className="py-2 px-2 font-extrabold">{r.rank}</td>
+                        <td className="py-2 px-2">{r.name}</td>
+                        <td className="py-2 px-2">
+                          {r.cls} ({r.classNo})
+                        </td>
+                        <td className="py-2 px-2 text-right">{r.done}</td>
+                        <td className="py-2 px-2 text-right font-extrabold">{r.score}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -780,7 +1168,7 @@ export function TeacherView({
                 maxLength={100}
                 value={newTeacherNote}
                 onChange={(e) => setNewTeacherNote(e.target.value)}
-                placeholder="e.g. S.2 Math teacher"
+                placeholder="e.g. S.1 & S.2 Math teacher"
                 className="min-h-[42px] px-3 py-2 border-2 border-[var(--key-edge)] rounded-[10px] bg-[var(--paper)] font-normal"
               />
             </label>
@@ -840,6 +1228,67 @@ export function TeacherView({
                   No additional teacher emails added yet. Add colleagues using the form on the left.
                 </p>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mandatory Confirmation Modal before writing Google Sheets */}
+      {pendingConfirm && (
+        <div
+          className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="sheets-confirm-title"
+        >
+          <div className="w-full max-w-lg p-6 border-2 border-[var(--ink)] rounded-[14px] bg-[var(--paper)] space-y-4 shadow-xl">
+            <h2 id="sheets-confirm-title" className="text-xl font-extrabold tracking-tight">
+              Confirm Google Sheets Sync
+            </h2>
+            <p className="text-sm text-[var(--soft)]">
+              Review the details below before writing Firestore student records to your Google Spreadsheet:
+            </p>
+            <div className="p-4 border-2 border-[var(--line)] rounded-[10px] bg-[var(--panel)] space-y-2 text-sm">
+              <div>
+                <span className="text-[var(--soft)]">Spreadsheet:</span>{' '}
+                <b>{pendingConfirm.meta.title}</b>
+              </div>
+              <div className="text-xs text-[var(--soft)] break-all">
+                ID: {pendingConfirm.meta.spreadsheetId}
+              </div>
+              <div>
+                <span className="text-[var(--soft)]">Tabs to update:</span>{' '}
+                <b>
+                  {SHEET_TABS.SUMMARIES}, {SHEET_TABS.S1_PROGRESS}, {SHEET_TABS.S2_PROGRESS},{' '}
+                  {SHEET_TABS.ATTEMPTS}
+                </b>
+              </div>
+              <div>
+                <span className="text-[var(--soft)]">Rows to write:</span>{' '}
+                <b>{pendingConfirm.students.length}</b> student summaries &amp;{' '}
+                <b>{pendingConfirm.attempts.length}</b> attempt records
+              </div>
+            </div>
+            <p className="text-xs text-[var(--soft)]">
+              Missing tabs will be created automatically, and existing contents on these four tabs will be refreshed with the latest Firestore data.
+            </p>
+            <div className="flex flex-wrap items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                disabled={sheetsBusy}
+                onClick={() => setPendingConfirm(null)}
+                className="bq-btn-ghost px-4 py-2 text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={sheetsBusy}
+                onClick={handleConfirmWriteSheets}
+                className="bq-btn px-5 py-2 text-sm"
+              >
+                {sheetsBusy ? 'Syncing...' : 'Confirm & Sync Now'}
+              </button>
             </div>
           </div>
         </div>

@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, ChevronLeft, ChevronRight } from 'lucide-react';
 import {
   ALL_QUESTIONS,
-  S2_CHAPTER_3,
   buildPlayableQuestion,
+  getChapterForSection,
   getQuestionById,
   getQuestionsForSection,
 } from '../data/curriculum';
@@ -57,7 +57,8 @@ export function PlayView({
   onBackToHub,
   onOpenLeaderboard,
 }: PlayViewProps) {
-  const section = S2_CHAPTER_3.sections.find((s) => s.id === config.sectionId)!;
+  const chapter = getChapterForSection(config.sectionId);
+  const section = chapter.sections.find((s) => s.id === config.sectionId) || chapter.sections[0];
   const sectionPool: QuestionItem[] = useMemo(() => {
     if (config.reviewMistakes && config.questionIds) {
       const idSet = new Set(config.questionIds);
@@ -230,7 +231,7 @@ export function PlayView({
       timestamp: new Date().toISOString(),
       studentEmail: state.profile?.email || 'guest@school.edu.hk',
       studentName: state.profile?.name || 'Student',
-      studentCls: state.profile?.cls || '2A',
+      studentCls: state.profile?.cls || (chapter.id === 's1-ch10' ? '1A' : '2A'),
       studentClassNo: state.profile?.classNo || 1,
       sectionId: activeQuestion.sectionId,
       questionId: activeQuestion.baseId,
@@ -490,7 +491,7 @@ export function PlayView({
   // Section completed state -> Trophy view
   if (!activeQuestion) {
     soundManager.play('complete');
-    const boards = buildLeaderboards(state);
+    const boards = buildLeaderboards(state, state.profile?.cls, undefined, chapter.id);
     return (
       <div className="space-y-6 pb-10">
         <div className="flex items-center justify-between gap-4">
@@ -500,7 +501,7 @@ export function PlayView({
             className="inline-flex items-center gap-1.5 text-sm font-bold text-[var(--soft)] hover:text-[var(--ink)] cursor-pointer"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span>Back to S.2 Chapter 3</span>
+            <span>Back to {chapter.form} {chapter.chapterLabel}</span>
           </button>
         </div>
 
@@ -568,7 +569,7 @@ export function PlayView({
 
           <div className="flex flex-wrap justify-center gap-3">
             <button type="button" onClick={onBackToHub} className="bq-btn px-5 py-2.5">
-              Back to S.2 Ch.3 Hub
+              Back to {chapter.form} {chapter.chapterLabel} Hub
             </button>
             <button type="button" onClick={onOpenLeaderboard} className="bq-btn-ghost px-5 py-2.5">
               Leaderboard
@@ -595,7 +596,7 @@ export function PlayView({
             className="inline-flex items-center gap-1.5 text-sm font-bold text-[var(--ink)] hover:underline underline-offset-4 shrink-0 cursor-pointer"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span>S.2 Ch.3</span>
+            <span>{chapter.form} {chapter.chapterLabel}</span>
           </button>
           <span className="text-[var(--soft)]" aria-hidden="true">/</span>
           <div className="text-sm font-extrabold truncate">
@@ -723,7 +724,9 @@ export function PlayView({
                 : `${activeQuestion.numberLabel} (${currentIdxInPool + 1} of ${sectionPool.length})`}
             </h2>
             <span className="text-xs sm:text-sm font-semibold text-[var(--soft)]">
-              {config.reviewMistakes ? `Section ${activeQuestion.sectionId.replace('sec', '')} · ` : ''}
+              {config.reviewMistakes
+                ? `Sec ${getChapterForSection(activeQuestion.sectionId).sections.find((s) => s.id === activeQuestion.sectionId)?.number ?? ''} · `
+                : ''}
               {activeQuestion.level} · {activeQuestion.topicTag}
               {activeQuestion.sourceTag ? ` · ${activeQuestion.sourceTag}` : ''}
             </span>
@@ -732,14 +735,26 @@ export function PlayView({
           <p className="text-sm text-[var(--soft)] mt-1 mb-4">
             {activeQuestion.isSimilar
               ? 'You made a mistake in the previous question, so solve this similar one to lock in the method.'
-              : activeQuestion.mode === 'expression'
-                ? 'Simplify step by step. Factorize before cancelling, and use a common denominator when adding or subtracting.'
-                : activeQuestion.mode === 'substitution'
-                  ? 'Substitute the given numbers in brackets first, then simplify and solve.'
-                  : activeQuestion.mode === 'change'
-                    ? 'Examine how changing one variable affects the subject in the formula.'
-                    : 'Keep both sides balanced. Multiply out denominators, group terms with the subject, then factorize and divide.'}
+              : chapter.id === 's1-ch10'
+                ? 'Simplify step by step. Expand brackets completely, combine all like terms and indices, and check if ascending or descending order is requested.'
+                : activeQuestion.mode === 'expression'
+                  ? 'Simplify step by step. Factorize before cancelling, and use a common denominator when adding or subtracting.'
+                  : activeQuestion.mode === 'substitution'
+                    ? 'Substitute the given numbers in brackets first, then simplify and solve.'
+                    : activeQuestion.mode === 'change'
+                      ? 'Examine how changing one variable affects the subject in the formula.'
+                      : 'Keep both sides balanced. Multiply out denominators, group terms with the subject, then factorize and divide.'}
           </p>
+          {!questionDone && currentStep?.orderRule && (
+            <div className="mb-3 px-3 py-1.5 border-2 border-[var(--ink)] rounded-[9px] bg-[var(--yellow)] text-[var(--yellow-ink)] text-xs font-extrabold inline-block">
+              Order required: {currentStep.orderRule.direction === 'asc' ? 'Ascending' : 'Descending'} powers of{' '}
+              {currentStep.orderRule.variable === 'any' ? (
+                'the variable'
+              ) : (
+                <span className="font-math italic">{currentStep.orderRule.variable}</span>
+              )}
+            </div>
+          )}
 
           {/* Question Prompt Box */}
           <div className="pb-4 border-b border-dashed border-[var(--line)]">
@@ -787,7 +802,7 @@ export function PlayView({
                   >
                     {label}
                   </span>
-                  <div className="text-xl sm:text-2xl overflow-x-auto">
+                  <div className="text-xl sm:text-2xl overflow-x-auto py-1.5 leading-relaxed">
                     {activeQuestion.mode === 'change' && idx > 0 ? (
                       <span className="font-ui font-bold text-lg">{entry.line}</span>
                     ) : (
@@ -823,7 +838,7 @@ export function PlayView({
                   ? 'Now write the new line'
                   : `Step ${stepIndex + 1} of ${activeQuestion.steps.length} · choose a move`}
             </div>
-            <div className="mt-1 min-h-[2.6rem] text-xl sm:text-2xl overflow-x-auto whitespace-nowrap">
+            <div className="mt-1 min-h-[3.1rem] text-xl sm:text-2xl overflow-x-auto whitespace-nowrap py-1.5 leading-relaxed">
               {activeQuestion.mode === 'change' && questionDone ? (
                 <span className="font-ui font-bold text-lg">{latestLine}</span>
               ) : (
@@ -893,7 +908,9 @@ export function PlayView({
                       <span className="w-7 h-7 rounded-[6px] border border-[var(--line)] text-[var(--soft)] text-xs font-extrabold grid place-items-center shrink-0">
                         {opt.label}
                       </span>
-                      <span className="font-math text-lg">{opt.text}</span>
+                      <span className="font-math text-lg">
+                        <MathExpr expr={opt.text} />
+                      </span>
                     </button>
                   ))}
                 </div>
@@ -969,7 +986,9 @@ export function PlayView({
                         activeQuestion.mode === 'change'
                           ? 'e.g. 4/3'
                           : activeQuestion.mode === 'expression'
-                            ? 'e.g. 1/(7x) or a^3/2'
+                            ? chapter.id === 's1-ch10'
+                              ? 'e.g. 4x^5 or 12 + 8e + e^2'
+                              : 'e.g. 1/(7x) or a^3/2'
                             : 'e.g. x = (6 - 7y)/5'
                       }
                       className="mt-1 w-full min-h-[46px] px-3 py-2 border-2 border-[var(--key-edge)] rounded-[10px] bg-[var(--paper)] text-[var(--ink)] font-math text-xl"

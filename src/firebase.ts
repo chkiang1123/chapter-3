@@ -3,11 +3,15 @@ import { GoogleAuthProvider, getAuth } from 'firebase/auth';
 import { doc, getDocFromServer, getFirestore } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
+const cfg = firebaseConfig as typeof firebaseConfig & { firestoreDatabaseId?: string };
 const app = initializeApp(firebaseConfig);
 
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+export const db = cfg.firestoreDatabaseId
+  ? getFirestore(app, cfg.firestoreDatabaseId)
+  : getFirestore(app);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
+googleProvider.addScope('https://www.googleapis.com/auth/spreadsheets');
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
 export enum OperationType {

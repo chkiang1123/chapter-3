@@ -10,16 +10,19 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import {
-  ALL_QUESTIONS,
+  ACTIVE_CHAPTERS,
   RESERVED_TOPIC_SLOTS,
-  S2_CHAPTER_3,
+  getChapterById,
   getQuestionById,
+  getQuestionsForChapter,
   getQuestionsForSection,
 } from '../data/curriculum';
-import type { QuestionLevel, SectionId } from '../data/types';
+import type { ChapterId, QuestionLevel, SectionId } from '../data/types';
 import {
   MAX_CLASS_NUMBER,
+  S1_CLASSES,
   S2_CLASSES,
+  getChapterProgress,
   getMistakeQuestionIds,
   type AppStorageState,
   type PlaySessionConfig,
@@ -29,10 +32,12 @@ import { MathExpr } from './MathExpr';
 
 interface ChapterHubViewProps {
   state: AppStorageState;
+  activeChapterId: ChapterId;
   authUser: User | null;
   isTeacher: boolean;
   authBusy: boolean;
   authError: string;
+  onSelectChapter: (chapterId: ChapterId) => void;
   onSignIn: () => void;
   onSignOut: () => void;
   onSaveProfile: (profile: StudentProfile) => void;
@@ -42,10 +47,12 @@ interface ChapterHubViewProps {
 
 export function ChapterHubView({
   state,
+  activeChapterId,
   authUser,
   isTeacher,
   authBusy,
   authError,
+  onSelectChapter,
   onSignIn,
   onSignOut,
   onSaveProfile,
@@ -70,20 +77,21 @@ export function ChapterHubView({
     }
   }, [state.profile, authUser]);
 
-  const totalQuestions = ALL_QUESTIONS.length;
-  const totalDone =
-    state.sections.sec1.completedIds.length +
-    state.sections.sec2.completedIds.length +
-    state.sections.sec3.completedIds.length;
-  const totalPct = totalQuestions > 0 ? Math.round((totalDone / totalQuestions) * 100) : 0;
+  const activeChapter = getChapterById(activeChapterId);
+  const chapterQuestions = useMemo(() => getQuestionsForChapter(activeChapterId), [activeChapterId]);
+  const chapterProgress = useMemo(
+    () => getChapterProgress(state, activeChapterId),
+    [state, activeChapterId],
+  );
 
   const mistakeQuestionIds = useMemo(
     () =>
       getMistakeQuestionIds(
         state.results,
-        ALL_QUESTIONS.map((q) => q.id),
+        chapterQuestions.map((q) => q.id),
+        activeChapterId,
       ),
-    [state.results],
+    [state.results, chapterQuestions, activeChapterId],
   );
 
   function handleProfileSubmit(e: React.FormEvent) {
@@ -111,6 +119,11 @@ export function ChapterHubView({
       classNo: num,
       email,
     });
+    if (cls.startsWith('1')) {
+      onSelectChapter('s1-ch10');
+    } else if (cls.startsWith('2')) {
+      onSelectChapter('s2-ch3');
+    }
     setEditingProfile(false);
   }
 
@@ -139,7 +152,7 @@ export function ChapterHubView({
     }
     const firstQ = getQuestionById(mistakeQuestionIds[0]);
     onStartPlay({
-      sectionId: firstQ?.sectionId || 'sec1',
+      sectionId: firstQ?.sectionId || activeChapter.sections[0].id,
       levelFilter: 'ALL',
       practiceMode: true,
       reviewMistakes: true,
@@ -147,50 +160,115 @@ export function ChapterHubView({
     });
   }
 
+  const isS1 = activeChapterId === 's1-ch10';
+
   return (
     <div className="space-y-10 pb-10">
+      {/* Separate Chapter Category Selector */}
+      <section aria-label="Chapter category switcher" className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {ACTIVE_CHAPTERS.map((ch) => {
+          const prog = getChapterProgress(state, ch.id);
+          const isSelected = ch.id === activeChapterId;
+          return (
+            <button
+              key={ch.id}
+              type="button"
+              onClick={() => {
+                onSelectChapter(ch.id);
+                setExpandedSection(null);
+              }}
+              aria-pressed={isSelected}
+              className={`text-left p-4 border-2 border-[var(--ink)] rounded-[14px] cursor-pointer transition-all ${
+                isSelected
+                  ? 'bg-[var(--yellow)] text-[var(--yellow-ink)] shadow-[0_4px_0_var(--key-edge)]'
+                  : 'bg-[var(--paper)] hover:bg-[var(--panel)]'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2 text-xs font-extrabold uppercase tracking-[0.07em]">
+                <span>
+                  {ch.form} · {ch.chapterLabel}
+                </span>
+                <span className="tabular-nums">
+                  {prog.doneCount}/{prog.totalCount} Qs · {prog.score} pts
+                </span>
+              </div>
+              <div className="text-lg font-extrabold tracking-tight mt-1">{ch.title}</div>
+              <div className="text-xs opacity-80 mt-0.5">
+                {ch.sections.length} sections · Separate progress &amp; leaderboard
+              </div>
+            </button>
+          );
+        })}
+      </section>
+
       {/* Hero + Rules Split */}
-      <section className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start pt-2">
+      <section className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         <div className="lg:col-span-7 space-y-5">
           <div>
             <p className="text-xs font-extrabold uppercase tracking-[0.08em] text-[var(--soft)] mb-2">
-              {S2_CHAPTER_3.form} · {S2_CHAPTER_3.chapterLabel} · Single Unit
+              S. K. H. Bishop Baker Secondary School · {activeChapter.form} · {activeChapter.chapterLabel}
             </p>
             <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight leading-[1.1] text-balance">
-              {S2_CHAPTER_3.title}
+              {activeChapter.title}
             </h1>
             <p className="mt-3 text-[var(--soft)] max-w-[56ch]">
-              Master algebraic fractions, formula substitution, and changing the subject one step at a time.
-              Choose your move, simplify or balance both sides, and earn points for clean solutions.
+              {isS1
+                ? 'Practise laws of positive integral indices, degree & constant identification, polynomial addition/subtraction, and expanding brackets in ascending or descending powers.'
+                : 'Master algebraic fractions, formula substitution, and changing the subject one step at a time. Choose your move, simplify or balance both sides, and earn points for clean solutions.'}
             </p>
           </div>
 
-          {/* Worked step preview matching Balance Quest hero */}
+          {/* Worked step preview */}
           <div
             className="p-4 sm:p-5 border-2 border-[var(--ink)] rounded-[14px] bg-[var(--panel)] space-y-2.5"
             aria-label="Example solving steps"
           >
             <div className="text-xs font-extrabold uppercase tracking-[0.07em] text-[var(--soft)]">
-              Step-by-step format
+              Step-by-step format ({activeChapter.form} {activeChapter.chapterLabel})
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] items-center gap-2 text-lg sm:text-xl font-math">
-              <div>
-                <MathExpr expr="(y^2 - 6y)/(y^2 - 36)" />
-              </div>
-              <span className="text-[var(--soft)] font-ui text-sm font-bold">→ Factor &amp; Cancel →</span>
-              <div>
-                <MathExpr expr="y/(y + 6)" />
-              </div>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] items-center gap-2 text-lg sm:text-xl font-math pt-1 border-t border-dashed border-[var(--line)]">
-              <div>
-                <MathExpr expr="(6 - 5x)/y = 7" />
-              </div>
-              <span className="text-[var(--soft)] font-ui text-sm font-bold">→ Make <i>x</i> subject →</span>
-              <div>
-                <MathExpr expr="x = (6 - 7y)/5" />
-              </div>
-            </div>
+            {isS1 ? (
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] items-center gap-2 text-lg sm:text-xl font-math">
+                  <div>
+                    <MathExpr expr="(2x^3)^4/(4x^2)" />
+                  </div>
+                  <span className="text-[var(--soft)] font-ui text-sm font-bold">→ Index Laws →</span>
+                  <div>
+                    <MathExpr expr="4x^10" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] items-center gap-2 text-lg sm:text-xl font-math pt-1 border-t border-dashed border-[var(--line)]">
+                  <div>
+                    <MathExpr expr="(e + 2)(e + 6)" />
+                  </div>
+                  <span className="text-[var(--soft)] font-ui text-sm font-bold">→ Expand (Asc.) →</span>
+                  <div>
+                    <MathExpr expr="12 + 8e + e^2" />
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] items-center gap-2 text-lg sm:text-xl font-math">
+                  <div>
+                    <MathExpr expr="(y^2 - 6y)/(y^2 - 36)" />
+                  </div>
+                  <span className="text-[var(--soft)] font-ui text-sm font-bold">→ Factor &amp; Cancel →</span>
+                  <div>
+                    <MathExpr expr="y/(y + 6)" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] items-center gap-2 text-lg sm:text-xl font-math pt-1 border-t border-dashed border-[var(--line)]">
+                  <div>
+                    <MathExpr expr="(6 - 5x)/y = 7" />
+                  </div>
+                  <span className="text-[var(--soft)] font-ui text-sm font-bold">→ Make <i>x</i> subject →</span>
+                  <div>
+                    <MathExpr expr="x = (6 - 7y)/5" />
+                  </div>
+                </div>
+              </>
+            )}
           </div>
 
           {/* Student Profile / Progress Card */}
@@ -244,7 +322,7 @@ export function ChapterHubView({
                   {state.profile ? 'Edit student details' : 'Before you start'}
                 </h2>
                 <p className="text-sm text-[var(--soft)] mt-1">
-                  Enter your name, class, and class number so your section progress and leaderboard rank are recorded.
+                  Enter your name, class (S.1 or S.2), and class number so your section progress and leaderboard rank are recorded.
                 </p>
                 <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 mt-4">
                   <label className="sm:col-span-2 grid gap-1 text-sm font-bold">
@@ -270,11 +348,20 @@ export function ChapterHubView({
                       required
                     >
                       <option value="">Choose</option>
-                      {S2_CLASSES.map((c) => (
-                        <option key={c} value={c}>
-                          {c}
-                        </option>
-                      ))}
+                      <optgroup label="S.1 Classes">
+                        {S1_CLASSES.map((c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
+                        ))}
+                      </optgroup>
+                      <optgroup label="S.2 Classes">
+                        {S2_CLASSES.map((c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
+                        ))}
+                      </optgroup>
                     </select>
                   </label>
                   <label className="grid gap-1 text-sm font-bold">
@@ -344,26 +431,28 @@ export function ChapterHubView({
                 <div
                   className="h-3 mt-4 overflow-hidden border-2 border-[var(--ink)] rounded-[8px] bg-[var(--panel)]"
                   role="progressbar"
+                  aria-label={`${activeChapter.form} ${activeChapter.chapterLabel} completion`}
                   aria-valuemin={0}
-                  aria-valuemax={totalQuestions}
-                  aria-valuenow={totalDone}
+                  aria-valuemax={chapterProgress.totalCount}
+                  aria-valuenow={chapterProgress.doneCount}
                 >
                   <div
                     className="h-full bg-[var(--green)] transition-[width] duration-300"
-                    style={{ width: `${totalPct}%` }}
+                    style={{ width: `${chapterProgress.pct}%` }}
                   />
                 </div>
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2.5 text-sm text-[var(--soft)] tabular-nums">
                   <span>
-                    <b className="text-[var(--ink)]">{totalDone}</b> / {totalQuestions} questions completed ({totalPct}%)
+                    <b className="text-[var(--ink)]">{chapterProgress.doneCount}</b> / {chapterProgress.totalCount}{' '}
+                    {activeChapter.form} questions ({chapterProgress.pct}%)
                   </span>
                   <span aria-hidden="true">·</span>
                   <span>
-                    <b className="text-[var(--ink)]">{state.score}</b> points
+                    <b className="text-[var(--ink)]">{chapterProgress.score}</b> chapter pts
                   </span>
                   <span aria-hidden="true">·</span>
                   <span>
-                    <b className="text-[var(--ink)]">{state.extraDone}</b> similar questions practised
+                    <b className="text-[var(--ink)]">{state.extraDone}</b> similar practised
                   </span>
                 </div>
               </div>
@@ -376,11 +465,21 @@ export function ChapterHubView({
           <h2 className="text-lg font-extrabold mb-3">How to play</h2>
           <ul className="space-y-2 text-sm sm:text-[15px] list-disc pl-5">
             <li>Choose the correct algebraic or balance move, then write the new line after simplifying.</li>
-            <li>
-              Use the <b>^</b> key for powers (e.g. <span className="font-math">a^3/2</span>) and brackets for compound denominators (e.g. <span className="font-math">1/(7x)</span>).
-            </li>
+            {isS1 ? (
+              <li>
+                Write polynomials in <b>completely expanded</b> form with all like terms and indices combined (e.g. <span className="font-math">6a^5</span>, not <span className="font-math">2a^2*3a^3</span>).
+              </li>
+            ) : (
+              <li>
+                Use the <b>^</b> key for powers (e.g. <span className="font-math">a^3/2</span>) and brackets for compound denominators (e.g. <span className="font-math">1/(7x)</span>).
+              </li>
+            )}
+            {isS1 && (
+              <li>
+                Watch for <b>ascending</b> or <b>descending</b> power questions — terms must follow the requested degree order!
+              </li>
+            )}
             <li>Use the highlight button to tell variable terms from constants, or open a hint if stuck.</li>
-            <li>You may skip up to 2 intermediate steps if you simplify directly — skipped steps still earn points!</li>
             <li>
               If you make a mistake in any step, you will practise <b>one similar question</b> straight after to build mastery.
             </li>
@@ -391,21 +490,24 @@ export function ChapterHubView({
           </ul>
           <div className="mt-4 pt-3 border-t border-dashed border-[var(--line)] text-xs text-[var(--soft)] space-y-1">
             <p>
-              <b className="text-[var(--ink)]">3 Sections in S.2 Ch.3:</b> Work through each section in order, or select Level 1, Level 2, or MCQ sets below.
+              <b className="text-[var(--ink)]">
+                {activeChapter.sections.length} Sections in {activeChapter.form} {activeChapter.chapterLabel}:
+              </b>{' '}
+              Work through each section in order, or select Level 1, Level 2, Level 3, or MCQ sets below.
             </p>
           </div>
         </aside>
       </section>
 
-      {/* S.2 Chapter 3 — The 3 Separated Sections */}
-      <section aria-labelledby="ch3-sections-heading" className="space-y-5">
+      {/* Active Chapter Sections */}
+      <section aria-labelledby="chapter-sections-heading" className="space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-[var(--ink)] pb-2.5">
-          <h2 id="ch3-sections-heading" className="text-2xl font-extrabold tracking-tight">
-            Chapter 3 Sections · {S2_CHAPTER_3.title}
+          <h2 id="chapter-sections-heading" className="text-2xl font-extrabold tracking-tight">
+            {activeChapter.form} {activeChapter.chapterLabel} · {activeChapter.title}
           </h2>
           <div className="flex flex-wrap items-center gap-3">
             <span className="text-sm text-[var(--soft)] tabular-nums">
-              {totalQuestions} total questions across 3 sections
+              {chapterProgress.totalCount} total questions across {activeChapter.sections.length} sections
             </span>
             <button
               type="button"
@@ -413,8 +515,8 @@ export function ChapterHubView({
               disabled={mistakeQuestionIds.length === 0}
               title={
                 mistakeQuestionIds.length > 0
-                  ? `Review ${mistakeQuestionIds.length} question${mistakeQuestionIds.length === 1 ? '' : 's'} you previously answered incorrectly`
-                  : 'No mistakes recorded yet — solve questions and any missed ones will appear here'
+                  ? `Review ${mistakeQuestionIds.length} question${mistakeQuestionIds.length === 1 ? '' : 's'} you previously answered incorrectly in ${activeChapter.chapterLabel}`
+                  : 'No mistakes recorded in this chapter yet'
               }
               className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-[10px] border-2 text-sm font-extrabold whitespace-nowrap shrink-0 transition-all ${
                 mistakeQuestionIds.length > 0
@@ -430,7 +532,7 @@ export function ChapterHubView({
         </div>
 
         <div className="grid grid-cols-1 gap-5">
-          {S2_CHAPTER_3.sections.map((sec) => {
+          {activeChapter.sections.map((sec) => {
             const secQuestions = getQuestionsForSection(sec.id);
             const prog = state.sections[sec.id];
             const doneCount = prog.completedIds.length;
@@ -567,14 +669,14 @@ export function ChapterHubView({
       <section aria-labelledby="reserved-topics-heading" className="space-y-4">
         <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-dashed border-[var(--line)] pb-2">
           <h2 id="reserved-topics-heading" className="text-lg font-extrabold text-[var(--soft)]">
-            Future S.2 Topics · Reserved Vacancy
+            Reserved Question Banks &amp; Future Chapters
           </h2>
           <span className="text-xs text-[var(--soft)]">
-            Space reserved for additional chapters and question sets
+            Space reserved for missing S.1 Ch.10 pages &amp; additional chapters
           </span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {RESERVED_TOPIC_SLOTS.map((slot) => (
             <div
               key={slot.id}

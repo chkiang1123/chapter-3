@@ -6,9 +6,12 @@ import { LeaderboardView } from './components/LeaderboardView';
 import { PlayView } from './components/PlayView';
 import { TeacherView } from './components/TeacherView';
 import { TopBar, type ActiveView } from './components/TopBar';
+import { getChapterIdForSection } from './data/curriculum';
+import type { ChapterId } from './data/types';
 import { auth } from './firebase';
 import {
   checkIsAuthorizedTeacher,
+  clearSheetsAccessToken,
   loadStudentSummaryFromCloud,
   recordAttemptToCloud,
   saveStudentStateToCloud,
@@ -19,6 +22,7 @@ import {
   type CloudLeaderboardRow,
 } from './state/firebaseSync';
 import {
+  getDefaultChapterForClass,
   loadAppState,
   resetStudentProgress,
   saveAppState,
@@ -31,10 +35,13 @@ import { soundManager } from './utils/sound';
 
 function AppShell() {
   const [state, setState] = useState<AppStorageState>(() => loadAppState());
+  const [activeChapterId, setActiveChapterId] = useState<ChapterId>(() =>
+    getDefaultChapterForClass(loadAppState().profile?.cls),
+  );
   const [view, setView] = useState<ActiveView>('hub');
   const [previousView, setPreviousView] = useState<ActiveView>('hub');
   const [playConfig, setPlayConfig] = useState<PlaySessionConfig>({
-    sectionId: 'sec1',
+    sectionId: 's1c10_sec1',
     levelFilter: 'ALL',
     practiceMode: false,
   });
@@ -54,6 +61,7 @@ function AppShell() {
       setAuthUser(user);
       setAuthError('');
       if (!user) {
+        clearSheetsAccessToken();
         setIsTeacher(false);
         setCloudLeaderboard([]);
         setAuthReady(true);
@@ -70,6 +78,8 @@ function AppShell() {
         if (cloudSummary) {
           setState((prev) => {
             const mergeIds = (a: string[], b: string[]) => Array.from(new Set([...a, ...b]));
+            const s1Score = Math.max(prev.scoreByChapter['s1-ch10'] ?? 0, cloudSummary.scoreS1C10);
+            const s2Score = Math.max(prev.scoreByChapter['s2-ch3'] ?? 0, cloudSummary.scoreS2C3);
             const next: AppStorageState = {
               ...prev,
               profile: {
@@ -78,7 +88,11 @@ function AppShell() {
                 classNo: cloudSummary.classNo,
                 email: cloudSummary.email,
               },
-              score: Math.max(prev.score, cloudSummary.score),
+              scoreByChapter: {
+                's1-ch10': s1Score,
+                's2-ch3': s2Score,
+              },
+              score: Math.max(prev.score, cloudSummary.score, s1Score + s2Score),
               extraDone: Math.max(prev.extraDone, cloudSummary.extraDone),
               wrongAttempts: Math.max(prev.wrongAttempts, cloudSummary.wrongAttempts),
               hintsUsed: Math.max(prev.hintsUsed, cloudSummary.hintsUsed),
@@ -96,11 +110,30 @@ function AppShell() {
                   ...prev.sections.sec3,
                   completedIds: mergeIds(prev.sections.sec3.completedIds, cloudSummary.completedIdsSec3),
                 },
+                s1c10_sec1: {
+                  ...prev.sections.s1c10_sec1,
+                  completedIds: mergeIds(prev.sections.s1c10_sec1.completedIds, cloudSummary.completedIdsS1C10Sec1),
+                },
+                s1c10_sec2: {
+                  ...prev.sections.s1c10_sec2,
+                  completedIds: mergeIds(prev.sections.s1c10_sec2.completedIds, cloudSummary.completedIdsS1C10Sec2),
+                },
+                s1c10_sec3: {
+                  ...prev.sections.s1c10_sec3,
+                  completedIds: mergeIds(prev.sections.s1c10_sec3.completedIds, cloudSummary.completedIdsS1C10Sec3),
+                },
+                s1c10_sec4: {
+                  ...prev.sections.s1c10_sec4,
+                  completedIds: mergeIds(prev.sections.s1c10_sec4.completedIds, cloudSummary.completedIdsS1C10Sec4),
+                },
               },
             };
             saveAppState(next);
             return next;
           });
+          setActiveChapterId((prev) =>
+            cloudSummary.cls ? getDefaultChapterForClass(cloudSummary.cls) : prev,
+          );
         }
       } catch (err) {
         setAuthError(err instanceof Error ? err.message : String(err));
@@ -131,27 +164,29 @@ function AppShell() {
     };
   }, [authReady, authUser]);
 
-  // Support ?autostart=1 for automated journeys & quick preview
+  // Support ?autostart=1 (&chapter=s1-ch10|s2-ch3) for automated journeys & quick preview
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
     if (params.get('autostart') === '1') {
+      const requestedChapter = params.get('chapter') === 's2-ch3' ? 's2-ch3' : 's1-ch10';
+      setActiveChapterId(requestedChapter);
       setState((prev) => {
         if (prev.profile) return prev;
         const next: AppStorageState = {
           ...prev,
           profile: {
             name: 'Chan Tai Man',
-            cls: '2A',
+            cls: requestedChapter === 's1-ch10' ? '1A' : '2A',
             classNo: 1,
-            email: '2a.1.chan.tai.man@school.edu.hk',
+            email: '1a.1.chan.tai.man@school.edu.hk',
           },
         };
         saveAppState(next);
         return next;
       });
       setPlayConfig({
-        sectionId: 'sec1',
+        sectionId: requestedChapter === 's1-ch10' ? 's1c10_sec1' : 'sec1',
         levelFilter: 'ALL',
         practiceMode: false,
       });
@@ -211,6 +246,7 @@ function AppShell() {
   }
 
   function handleStartPlay(config: PlaySessionConfig) {
+    setActiveChapterId(getChapterIdForSection(config.sectionId));
     setPlayConfig(config);
     setView('play');
     window.scrollTo(0, 0);
@@ -228,6 +264,7 @@ function AppShell() {
 
     setState((prev) => {
       const secId = payload.record.sectionId;
+      const chapterId = getChapterIdForSection(secId);
       const curSec = prev.sections[secId];
       const nextCompleted = payload.isExtra
         ? curSec.completedIds
@@ -241,9 +278,20 @@ function AppShell() {
           ? { forId: payload.baseQuestionId, variantIndex: payload.variantIndexForExtra }
           : null;
 
+      const nextChapterScores = {
+        ...prev.scoreByChapter,
+        [chapterId]: (prev.scoreByChapter[chapterId] ?? 0) + payload.record.points,
+      };
+
+      const recordWithChapter: AttemptRecord = {
+        ...payload.record,
+        chapterId,
+      };
+
       const next: AppStorageState = {
         ...prev,
         score: prev.score + payload.record.points,
+        scoreByChapter: nextChapterScores,
         extraDone: prev.extraDone + (payload.isExtra ? 1 : 0),
         wrongAttempts:
           prev.wrongAttempts + payload.record.wrongMoves + payload.record.wrongLines,
@@ -256,11 +304,11 @@ function AppShell() {
             pendingSimilar: nextPending,
           },
         },
-        results: [payload.record, ...prev.results].slice(0, 300),
+        results: [recordWithChapter, ...prev.results].slice(0, 300),
       };
       saveAppState(next);
       if (authUser && next.profile) {
-        void recordAttemptToCloud(authUser, next, next.profile, payload.record);
+        void recordAttemptToCloud(authUser, next, next.profile, recordWithChapter);
       }
       return next;
     });
@@ -283,72 +331,89 @@ function AppShell() {
   }
 
   return (
-    <main className="w-full max-w-[1160px] mx-auto px-4 sm:px-6 py-4 sm:py-6">
-      <TopBar
-        view={view}
-        score={state.score}
-        hasProfile={Boolean(state.profile)}
-        soundOn={soundOn}
-        darkMode={darkMode}
-        authUser={authUser}
-        isTeacher={isTeacher}
-        authBusy={authBusy}
-        onSignIn={handleSignIn}
-        onSignOut={handleSignOut}
-        onNavigate={navigate}
-        onToggleSound={handleToggleSound}
-        onToggleDark={() => setDarkMode((d) => !d)}
-      />
-
-      {view === 'hub' && (
-        <ChapterHubView
-          state={state}
+    <div className="min-h-screen flex flex-col">
+      <main className="flex-1 w-full max-w-[1160px] mx-auto px-4 sm:px-6 py-4 sm:py-6">
+        <TopBar
+          view={view}
+          activeChapterId={activeChapterId}
+          score={state.score}
+          hasProfile={Boolean(state.profile)}
+          soundOn={soundOn}
+          darkMode={darkMode}
           authUser={authUser}
           isTeacher={isTeacher}
           authBusy={authBusy}
-          authError={authError}
+          onSelectChapter={setActiveChapterId}
           onSignIn={handleSignIn}
           onSignOut={handleSignOut}
-          onSaveProfile={handleSaveProfile}
-          onStartPlay={handleStartPlay}
-          onOpenLeaderboard={() => navigate('leaderboard')}
+          onNavigate={navigate}
+          onToggleSound={handleToggleSound}
+          onToggleDark={() => setDarkMode((d) => !d)}
         />
-      )}
 
-      {view === 'play' && (
-        <PlayView
-          state={state}
-          config={playConfig}
-          onRecordAttempt={handleRecordAttempt}
-          onBackToHub={() => navigate('hub')}
-          onOpenLeaderboard={() => navigate('leaderboard')}
-        />
-      )}
+        {view === 'hub' && (
+          <ChapterHubView
+            state={state}
+            activeChapterId={activeChapterId}
+            authUser={authUser}
+            isTeacher={isTeacher}
+            authBusy={authBusy}
+            authError={authError}
+            onSelectChapter={setActiveChapterId}
+            onSignIn={handleSignIn}
+            onSignOut={handleSignOut}
+            onSaveProfile={handleSaveProfile}
+            onStartPlay={handleStartPlay}
+            onOpenLeaderboard={() => navigate('leaderboard')}
+          />
+        )}
 
-      {view === 'leaderboard' && (
-        <LeaderboardView
-          state={state}
-          cloudRows={cloudLeaderboard}
-          onBack={() => navigate(previousView)}
-        />
-      )}
+        {view === 'play' && (
+          <PlayView
+            state={state}
+            config={playConfig}
+            onRecordAttempt={handleRecordAttempt}
+            onBackToHub={() => navigate('hub')}
+            onOpenLeaderboard={() => navigate('leaderboard')}
+          />
+        )}
 
-      {view === 'teacher' && (
-        <TeacherView
-          state={state}
-          authUser={authUser}
-          authReady={authReady}
-          isTeacher={isTeacher}
-          authBusy={authBusy}
-          authError={authError}
-          cloudLeaderboard={cloudLeaderboard}
-          onSignIn={handleSignIn}
-          onSignOut={handleSignOut}
-          onResetProgress={handleResetProgress}
-          onBack={() => navigate(previousView)}
-        />
-      )}
-    </main>
+        {view === 'leaderboard' && (
+          <LeaderboardView
+            state={state}
+            activeChapterId={activeChapterId}
+            cloudRows={cloudLeaderboard}
+            onBack={() => navigate(previousView)}
+          />
+        )}
+
+        {view === 'teacher' && (
+          <TeacherView
+            state={state}
+            activeChapterId={activeChapterId}
+            authUser={authUser}
+            authReady={authReady}
+            isTeacher={isTeacher}
+            authBusy={authBusy}
+            authError={authError}
+            cloudLeaderboard={cloudLeaderboard}
+            onSignIn={handleSignIn}
+            onSignOut={handleSignOut}
+            onResetProgress={handleResetProgress}
+            onBack={() => navigate(previousView)}
+          />
+        )}
+      </main>
+
+      <footer className="w-full max-w-[1160px] mx-auto px-4 sm:px-6 py-5 border-t border-dashed border-[var(--line)] text-center text-xs text-[var(--soft)] space-y-1">
+        <p className="font-bold text-[var(--ink)]">
+          © 2026 S. K. H. Bishop Baker Secondary School · Mathematics Department · All Rights Reserved.
+        </p>
+        <p>
+          Balance Quest interactive algebra platform (S.1 Ch.10 Manipulation of Simple Polynomials &amp; S.2 Ch.3 Algebraic Fractions and Formulas).
+        </p>
+      </footer>
+    </div>
   );
 }
 

@@ -1,7 +1,12 @@
+import { useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
-import { ALL_QUESTIONS } from '../data/curriculum';
+import { getChapterById, getQuestionsForChapter } from '../data/curriculum';
+import type { ChapterId } from '../data/types';
 import {
+  S1_CLASSES,
+  S2_CLASSES,
   buildLeaderboards,
+  getChapterProgress,
   type AppStorageState,
   type CloudBoardInput,
   type LeaderboardEntry,
@@ -9,6 +14,7 @@ import {
 
 interface LeaderboardViewProps {
   state: AppStorageState;
+  activeChapterId: ChapterId;
   cloudRows?: CloudBoardInput[];
   onBack: () => void;
 }
@@ -17,17 +23,19 @@ function BoardTable({
   rows,
   title,
   subtitle,
+  totalChapterQuestions,
 }: {
   rows: LeaderboardEntry[];
   title: string;
   subtitle: string;
+  totalChapterQuestions: number;
 }) {
   return (
     <section className="p-5 sm:p-6 border-2 border-[var(--ink)] rounded-[14px] bg-[var(--paper)]">
       <h2 className="text-lg font-extrabold">{title}</h2>
       <p className="text-sm text-[var(--soft)] mt-0.5">{subtitle}</p>
       {!rows.length ? (
-        <p className="py-6 text-sm text-[var(--soft)]">No scores yet. Be the first!</p>
+        <p className="py-6 text-sm text-[var(--soft)]">No scores yet in this category. Be the first!</p>
       ) : (
         <div className="overflow-x-auto mt-3">
           <table className="w-full border-collapse tabular-nums text-sm">
@@ -69,7 +77,7 @@ function BoardTable({
                       {r.cls} ({r.classNo})
                     </td>
                     <td className="py-2 px-2 text-right">
-                      {r.done} / {ALL_QUESTIONS.length}
+                      {r.done} / {totalChapterQuestions}
                     </td>
                     <td className="py-2 px-2 text-right font-extrabold">{r.score}</td>
                   </tr>
@@ -83,9 +91,33 @@ function BoardTable({
   );
 }
 
-export function LeaderboardView({ state, cloudRows, onBack }: LeaderboardViewProps) {
-  const cls = state.profile?.cls || '2A';
-  const { classTop, formTop, myClassRank, myFormRank } = buildLeaderboards(state, cls, cloudRows);
+export function LeaderboardView({
+  state,
+  activeChapterId,
+  cloudRows,
+  onBack,
+}: LeaderboardViewProps) {
+  const [boardChapter, setBoardChapter] = useState<ChapterId>(activeChapterId);
+  const formClasses = boardChapter === 's1-ch10' ? S1_CLASSES : S2_CLASSES;
+  const defaultCls =
+    state.profile?.cls && (formClasses as readonly string[]).includes(state.profile.cls)
+      ? state.profile.cls
+      : formClasses[0];
+  const [selectedCls, setSelectedCls] = useState<string>(defaultCls);
+
+  const effectiveCls = (formClasses as readonly string[]).includes(selectedCls)
+    ? selectedCls
+    : formClasses[0];
+
+  const chapter = getChapterById(boardChapter);
+  const totalChapterQuestions = getQuestionsForChapter(boardChapter).length;
+  const { classTop, formTop, myClassRank, myFormRank } = buildLeaderboards(
+    state,
+    effectiveCls,
+    cloudRows,
+    boardChapter,
+  );
+  const myChapterProgress = getChapterProgress(state, boardChapter);
 
   return (
     <div className="space-y-6 pb-10">
@@ -93,7 +125,7 @@ export function LeaderboardView({ state, cloudRows, onBack }: LeaderboardViewPro
         <div>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">Leaderboard</h1>
           <p className="text-sm text-[var(--soft)]">
-            S.2 Chapter 3 · Algebraic Fractions and Formulas
+            {chapter.form} {chapter.chapterLabel} · {chapter.title}
           </p>
         </div>
         <button
@@ -106,24 +138,76 @@ export function LeaderboardView({ state, cloudRows, onBack }: LeaderboardViewPro
         </button>
       </div>
 
+      {/* Chapter Category Switcher + Class Selector */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap gap-2" role="tablist" aria-label="Leaderboard chapter category">
+          {(
+            [
+              { id: 's1-ch10', label: 'S.1 Ch.10 · Polynomials' },
+              { id: 's2-ch3', label: 'S.2 Ch.3 · Algebraic Fractions' },
+            ] as Array<{ id: ChapterId; label: string }>
+          ).map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              aria-selected={boardChapter === item.id}
+              onClick={() => {
+                setBoardChapter(item.id);
+                const nextFormClasses = item.id === 's1-ch10' ? S1_CLASSES : S2_CLASSES;
+                setSelectedCls(
+                  state.profile?.cls && (nextFormClasses as readonly string[]).includes(state.profile.cls)
+                    ? state.profile.cls
+                    : nextFormClasses[0],
+                );
+              }}
+              className={`px-4 py-2 border-2 border-[var(--ink)] rounded-[10px] text-sm font-extrabold cursor-pointer transition-colors ${
+                boardChapter === item.id
+                  ? 'bg-[var(--yellow)] text-[var(--yellow-ink)]'
+                  : 'bg-[var(--paper)] hover:bg-[var(--panel)]'
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+
+        <label className="text-sm font-bold flex items-center gap-2">
+          <span>Class</span>
+          <select
+            value={effectiveCls}
+            onChange={(e) => setSelectedCls(e.target.value)}
+            className="min-h-[38px] px-3 border-2 border-[var(--key-edge)] rounded-[9px] bg-[var(--paper)] font-bold"
+          >
+            {formClasses.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
         <BoardTable
           rows={classTop}
-          title={`Class ${cls} · Top 10`}
-          subtitle="Ranked by points, then by questions completed."
+          title={`Class ${effectiveCls} · Top 10`}
+          subtitle="Ranked by chapter points, then by questions completed."
+          totalChapterQuestions={totalChapterQuestions}
         />
         <BoardTable
           rows={formTop}
-          title="Form S.2 · Top 20"
-          subtitle="All S.2 classes combined."
+          title={`Form ${chapter.form} · Top 20`}
+          subtitle={`All ${chapter.form} classes combined (${chapter.chapterLabel}).`}
+          totalChapterQuestions={totalChapterQuestions}
         />
       </div>
 
       {state.profile && (
         <p className="text-sm text-[var(--soft)] tabular-nums">
-          Your rank: <b className="text-[var(--ink)]">#{myClassRank ?? '–'}</b> in {cls} ·{' '}
-          <b className="text-[var(--ink)]">#{myFormRank ?? '–'}</b> in S.2 ·{' '}
-          <b className="text-[var(--ink)]">{state.score}</b> points
+          Your {chapter.form} rank: <b className="text-[var(--ink)]">#{myClassRank ?? '–'}</b> in {effectiveCls} ·{' '}
+          <b className="text-[var(--ink)]">#{myFormRank ?? '–'}</b> in {chapter.form} ·{' '}
+          <b className="text-[var(--ink)]">{myChapterProgress.score}</b> points in {chapter.chapterLabel}
         </p>
       )}
     </div>
